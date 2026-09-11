@@ -78,6 +78,7 @@ git status --short
 | 做畫面 | `docs/05-DESIGN-SYSTEM.md` **含禁用清單** |
 | 確認我能改哪些檔 | `docs/06-WORKSTREAMS.md` |
 | 跑指令、遷移、備份 | `docs/07-OPERATIONS.md` |
+| 前台／FreeStore 相關 | `docs/08-FREESTORE.md` |
 | 「這件事為什麼這樣決定？」 | `docs/decisions/` — **不要重新討論已定案的事** |
 
 ---

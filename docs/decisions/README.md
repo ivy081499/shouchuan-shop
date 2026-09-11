@@ -41,3 +41,4 @@
 | [0006](ADR-0006-import-requires-confirmation.md) | 匯入必須人工逐列確認 | 已採用 |
 | [0007](ADR-0007-no-customer-login.md) | 前台訪客結帳，不做客戶登入 | 前台部分被 0008 取代 |
 | [0008](ADR-0008-freestore-for-storefront.md) | **前台改用 FreeStore，本系統專注後台** | 已採用 |
+| [0009](ADR-0009-brand-name.md) | 品牌名稱：平凡生活 / Ordinary Days | 已採用 |

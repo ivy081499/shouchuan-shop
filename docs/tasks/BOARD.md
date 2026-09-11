@@ -20,10 +20,10 @@
 - [x] P0-05 `src/lib/money.ts` 金額工具（19 項測試通過）  done:2026-09-11 commit:10a198a
 - [x] P0-06 `src/lib/bead-spec.ts` 淘寶規格解析（19 項測試通過）  done:2026-09-11 commit:10a198a
 - [x] P0-07 `src/lib/costing.ts` 成本計算（17 項測試通過）  done:2026-09-11 commit:10a198a
-- [ ] P0-08 `src/contracts/**` zod 驗證與型別
-- [ ] P0-09 `src/data/**` 資料存取層
+- [x] P0-08 `src/contracts/**` zod 驗證與型別  done:2026-09-11 commit:1625adc
+- [x] P0-09 `src/data/**` 資料存取層  done:2026-09-11 commit:f724971
 - [ ] P0-10 `src/ui/**` 元件 stub（最終 props 簽名）
-- [ ] P0-11 migration 0000 + 種子資料
+- [x] P0-11 migration 0000 + 種子資料（11 表建立成功、唯一索引驗證通過）  done:2026-09-11
 - [ ] P0-12 `src/app/admin/_shell/nav.ts` 預先登記所有後台導覽項目
 - [ ] P0-13 建立 D1 / R2 / Cloudflare Access
 - [ ] P0-14 空機部署一次，驗證 OpenNext 管線通
