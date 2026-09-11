@@ -1,0 +1,46 @@
+# Session 交接筆記
+
+**新的寫在最上面。** 每次收工追加一段，下一個 session 只需讀前 50 行。
+
+格式：
+```
+## YYYY-MM-DD — 工作流 — 誰
+**做了什麼**：
+**沒做完**：
+**下一個人要知道**：
+```
+
+---
+
+## 2026-09-11 — Phase 0 地基 — 主控 session
+
+**做了什麼**
+- 安裝 gh CLI 2.100.0。**未使用 Homebrew**（機器上沒有），改用官方 arm64 binary 放進 `~/.local/bin`（該目錄已存在且已在 PATH）。
+- 建立專案骨架：Next.js 16.3.4 + React 19.3 + OpenNext 1.20.6 + Drizzle 0.45.2 + Tailwind 4.3.3。**所有版本鎖死不用 `^`**。
+- 寫完並凍結 `db/schema.ts`（11 張表）。
+- 寫完 `src/lib/` 三個核心模組，**測試 36 項全數通過**：
+  - `money.ts` — 金額（整數分）、運費比例攤提
+  - `bead-spec.ts` — 淘寶規格解析
+  - `costing.ts` — 成本／毛利／可做數量／採購缺口
+
+**沒做完**
+- `src/contracts/**`、`src/data/**`、`src/ui/**` stub
+- migration 0000 與種子資料
+- Cloudflare 資源（D1 / R2 / Access）與首次部署
+- GitHub repo：**卡在等店主跑 `gh auth login` 瀏覽器授權**
+
+**下一個人要知道**
+
+1. **TypeScript 故意鎖 5.9.3**，不是 npm 上的 latest 7.0.2。TS 7 是全新大版本，Next 與 Drizzle 的型別還沒對它驗證過。不要「順手升級」。
+
+2. **npm 全域快取壞掉**（`~/.npm_local_cache` 有權限衝突的檔案）。安裝套件時要加 `--cache /Users/admin/.claude/jobs/<job>/tmp/npmcache`，否則 EEXIST/EACCES 失敗。不要去動店主的全域快取。
+
+3. **解析器有三個等級，不是「能解析／不能解析」兩種**：
+   - `parsed` 有把握、`estimated` 賣家自己說是約數（如「约60颗左右」）、`manual` 完全沒顆數資訊（如「24款」、線材按米計）。
+   - 店主明確要求：**解析結果一律要他逐列確認才能寫入資料庫**。不要為了流暢度自動採用。
+
+4. **成本已用真實資料對過**（匯率 4.5）：白水晶每顆 NT$2.01、蜜桃粉瑪瑙 NT$21.12、隔片含攤運費 NT$2.06。動到 `costing.ts` 後請重跑 `node --experimental-strip-types src/lib/costing.test.ts`。
+
+5. **庫存是「付款確認才實扣」**，這是店主指定的，代價是可能超賣。處理方式是後台標紅警示，不是預扣。不要自作主張改掉。
+
+6. 店主要求**整合兩個 subagent 產出後要跑兩輪稽核**（改一次、再稽核、再改一次就結束）。規則寫在 `docs/06-WORKSTREAMS.md`。
