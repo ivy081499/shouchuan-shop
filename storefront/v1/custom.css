@@ -59,11 +59,27 @@ header, .header {
   box-shadow: none;            /* 移除預設陰影，改用細線 */
 }
 
-/* 文字標題（尚無 LOGO 圖時使用） */
+/* 文字標題（尚無 LOGO 圖時使用）
+   FreeStore 此版型在沒有 LOGO 圖檔時，品牌名放在 .site-title，
+   但預設為隱藏。這裡把它顯示出來當作文字標誌。 */
+.site-title {
+  display: flex !important;
+  align-items: center;
+  height: 100%;
+}
+.site-title a,
 #logo a, .logo a {
   font-family: var(--serif);
-  font-size: 22px;
-  letter-spacing: 0.22em;      /* 品牌名拉開，像印在紙上 */
+  font-size: 21px;
+  letter-spacing: 0.2em;       /* 品牌名拉開，像印在紙上 */
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+/* 側邊選單裡的店名也一併套用 */
+.pushy-menu-storename a {
+  font-family: var(--serif);
+  letter-spacing: 0.14em;
   color: var(--ink);
 }
 

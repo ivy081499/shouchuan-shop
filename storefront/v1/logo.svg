@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="560" height="120" viewBox="0 0 560 120" role="img" aria-label="平凡生活 Ordinary Days">
+  <!--
+    平凡生活 Ordinary Days — 文字標誌 v1
+    襯線中文主標 + 無襯線英文副標，字距拉開，像印在紙上。
+    色彩取自設計系統：ink #1F1D1A / ink-soft #6B6761 / hairline #E2E0DC
+  -->
+  <rect width="560" height="120" fill="none"/>
+
+  <text x="280" y="58"
+        text-anchor="middle"
+        font-family="Noto Serif TC, Songti TC, STSong, serif"
+        font-size="42"
+        font-weight="500"
+        letter-spacing="10"
+        fill="#1F1D1A">平凡生活</text>
+
+  <line x1="196" y1="76" x2="364" y2="76" stroke="#E2E0DC" stroke-width="1"/>
+
+  <text x="280" y="98"
+        text-anchor="middle"
+        font-family="Noto Sans TC, PingFang TC, sans-serif"
+        font-size="15"
+        letter-spacing="6"
+        fill="#6B6761">ORDINARY DAYS</text>
+</svg>
