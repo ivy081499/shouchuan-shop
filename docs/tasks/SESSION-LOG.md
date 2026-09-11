@@ -12,6 +12,36 @@
 
 ---
 
+## 2026-09-11 — ⚠️ 範圍變更：前台改用 FreeStore — 主控 session
+
+**做了什麼**
+- 店主發現 FreeStore（freestore.com.tw）免費開店平台，查證後確認：
+  0 元開店、免月費、**成交才收約 1%**、支援轉帳收款、**不強制串金流物流**。
+- 決定採方案 C：**前台用 FreeStore 先開賣，後台自建**。寫入 ADR-0008。
+- 取消 S1（設計系統／前台外殼）、S2（前台頁面）兩個工作流。
+- 新增 S5-07：FreeStore 訂單匯入。
+- 更新 CLAUDE.md、06-WORKSTREAMS、BOARD、decisions/README。
+- GitHub repo 已建立：https://github.com/ivy081499/shouchuan-shop（private）
+
+**下一個人要知道**
+
+1. **不要再做前台。** 看到 `src/contracts/order.ts` 裡的 `cartSchema`、`CART_COOKIE_NAME`、
+   `checkoutSchema` 不要以為要做購物車——那些是前台取消前寫的，**刻意保留不刪**，
+   日後若要自建前台可直接用。schema 也不需要改。
+
+2. **FreeStore 沒有公開 API。** 訂單要靠匯出檔匯入後台。
+   **店主尚未確認 FreeStore 後台有沒有匯出 CSV 功能**——這決定 S5-07 怎麼做：
+   - 有匯出 → 做解析器，流程同淘寶匯入
+   - 沒有 → 改做手動建立訂單的介面
+
+3. **既有程式全部保留可用。** schema 11 表、`src/lib/`、`src/data/`、大部分 contracts
+   都不受影響。`orders` 表本來就能裝 FreeStore 的訂單，這是先凍結 schema 的好處。
+
+4. `docs/05-DESIGN-SYSTEM.md` 保留但**用途改變**：只服務後台，走資訊密度優先。
+   「配方透視」signature 元素隨前台一起擱置。
+
+---
+
 ## 2026-09-11 — Phase 0 地基 — 主控 session
 
 **做了什麼**

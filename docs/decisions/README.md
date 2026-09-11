@@ -39,4 +39,5 @@
 | [0004](ADR-0004-stock-deduct-on-payment.md) | 付款確認才扣庫存（接受超賣風險） | 已採用 |
 | [0005](ADR-0005-schema-freeze.md) | Schema 凍結與解凍程序 | 已採用 |
 | [0006](ADR-0006-import-requires-confirmation.md) | 匯入必須人工逐列確認 | 已採用 |
-| [0007](ADR-0007-no-customer-login.md) | 前台訪客結帳，不做客戶登入 | 已採用 |
+| [0007](ADR-0007-no-customer-login.md) | 前台訪客結帳，不做客戶登入 | 前台部分被 0008 取代 |
+| [0008](ADR-0008-freestore-for-storefront.md) | **前台改用 FreeStore，本系統專注後台** | 已採用 |
