@@ -14,7 +14,7 @@
 ## Phase 0 — 地基（主控 session，不開 subagent）
 
 - [x] P0-01 安裝 gh CLI（官方 binary → ~/.local/bin，未用 Homebrew）  done:2026-09-11
-- [~] P0-02 建立 GitHub private repo　　**卡在：等店主完成 `gh auth login` 瀏覽器授權**
+- [x] P0-02 建立 GitHub private repo → https://github.com/ivy081499/shouchuan-shop  done:2026-09-11
 - [x] P0-03 專案骨架：Next.js 16 + OpenNext + Drizzle + Tailwind，套件鎖定確切版本  done:2026-09-11 commit:10a198a
 - [x] P0-04 `db/schema.ts` 11 張表  done:2026-09-11 commit:10a198a
 - [x] P0-05 `src/lib/money.ts` 金額工具（19 項測試通過）  done:2026-09-11 commit:10a198a
