@@ -7,3 +7,5 @@ node_modules/
 backups/
 .DS_Store
 .data/
+.claude/
+*.xlsx

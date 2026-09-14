@@ -47,7 +47,9 @@ settings（獨立的 key-value）
 - `status` 為 `draft` 時代表「已解析、待店主確認」，**此時不可影響庫存與成本**。
 - 按下確認才 `confirmed`，同時回寫 `beads.unitCostCents`、增加 `beads.stockQty`、寫入 `stock_ledger`。
 - `rawTitle` / `rawSpec` / `rawUrl` 保留淘寶原文（簡體），供店主核對，**不要拿去當前台顯示名稱**。
-- `beadsPerUnit` 可為 null（解析不出），此時 UI **必須**要求店主填寫才能確認。
+- `beadsPerUnit` 解析不出時預設為 **1**（見 ADR-0006 修訂）。
+  顆數的人工確認在**雲端試算表**完成，交給系統匯入的資料必須是已確認過的版本。
+  `countSource = manual` 代表這個數字來自解析器猜測，未必經過確認。
 
 ### `products` / `recipes` — 手串與配方
 - `manualStock` 為 null 時，可售量由配方與庫存動態計算（見 `calcBuildableQty`）。
@@ -80,7 +82,7 @@ settings（獨立的 key-value）
 
 ### 進貨
 6. `purchases.status = 'draft'` 時，**不得**影響 `beads.stockQty` 或 `unitCostCents`。
-7. 確認進貨時，`beadsPerUnit` 為 null 的列**不得**通過。
+7. `beadsPerUnit` **必須** ≥ 1；解析不出時預設 1，顆數正確性由試算表那一關把關（ADR-0006 修訂）。
 8. 運費攤提各列加總**必須**等於總運費（用 `allocateProportional`）。
 
 ### 成本

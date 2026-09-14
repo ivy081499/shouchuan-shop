@@ -3,8 +3,11 @@
  *
  * ⚠️【重要】此解析器的輸出是【建議值】，不是權威值。
  * 淘寶規格欄由賣家自由填寫，格式極不一致，必定有無法判讀的情況。
- * 因此匯入流程強制：解析 → 顯示給使用者逐列確認／修改 → 才寫入資料庫。
- * 任何工作流都不得略過確認步驟直接採用解析結果。
+ *
+ * 判讀不出顆數時一律回傳 beadsPerUnit: 1、confidence: 'manual'（ADR-0006 修訂 2026-09-14）。
+ * 這個 1 是讓流程不卡住的預設值，**不是**確認過的數字——
+ * 顆數的人工確認在雲端試算表完成，交給系統匯入的必須是已確認過的版本。
+ * confidence 為 'manual' 即代表該數字未經確認，成本可能高估數倍。
  *
  * 以下規則由實際檔案（订单数据.xlsx）樣本歸納而來。
  */
@@ -12,9 +15,9 @@
 export type CountConfidence = 'parsed' | 'estimated' | 'manual'
 
 export interface ParsedSpec {
-  /** 每件包含幾顆。null = 解析不出，UI 必須要求使用者填寫 */
-  beadsPerUnit: number | null
-  /** parsed = 有把握；estimated = 約數需你確認；manual = 無法解析 */
+  /** 每件包含幾顆。解析不出時為 1（預設值，未經確認，見檔頭說明） */
+  beadsPerUnit: number
+  /** parsed = 有把握；estimated = 約數需你確認；manual = 無法解析，顆數為預設值 1 */
   confidence: CountConfidence
   /** 解析出的直徑（mm），供建檔時預填 */
   sizeMm: number | null
@@ -66,16 +69,16 @@ function parseSize(s: string): number | null {
  *   「4mm/1颗」                     → 1   parsed
  *   「8A白水晶 6mm【约60颗左右】」   → 60  estimated（實收可能不同）
  *   「素银01款 3.5mm/颗(孔径约1.5mm)」→ 1   parsed（單顆計價）
- *   「大号直径约7.5mm」              → null manual（無顆數資訊）
- *   「24款」「56亮天蓝」             → null manual（純款式編號）
- *   「日本扁丝盒装...长约45米...」    → null manual（線材按米計）
+ *   「大号直径约7.5mm」              → 1 manual（無顆數資訊，預設 1）
+ *   「24款」「56亮天蓝」             → 1 manual（純款式編號，預設 1）
+ *   「日本扁丝盒装...长约45米...」    → 1 manual（線材按米計，預設 1）
  */
 export function parseBeadSpec(rawSpec: string | null | undefined): ParsedSpec {
   const empty: ParsedSpec = {
-    beadsPerUnit: null,
+    beadsPerUnit: 1,
     confidence: 'manual',
     sizeMm: null,
-    reason: '規格欄為空，請手動填寫每件顆數',
+    reason: '規格欄為空，顆數預設 1，請在試算表確認',
   }
   if (!rawSpec || !rawSpec.trim()) return empty
 
@@ -85,10 +88,10 @@ export function parseBeadSpec(rawSpec: string | null | undefined): ParsedSpec {
   // 線材類：按長度計價，不是珠子
   if (/\d+\s*米|长约\d+/.test(s)) {
     return {
-      beadsPerUnit: null,
+      beadsPerUnit: 1,
       confidence: 'manual',
       sizeMm: null,
-      reason: '這是線材（按長度計價），非珠子。請確認是否要建檔，並自行決定計量方式',
+      reason: '這是線材（按長度計價），非珠子。顆數預設 1，請在試算表確認計量方式',
     }
   }
 
@@ -132,18 +135,18 @@ export function parseBeadSpec(rawSpec: string | null | undefined): ParsedSpec {
   // 只有尺寸沒顆數：大号直径约7.5mm
   if (sizeMm !== null) {
     return {
-      beadsPerUnit: null,
+      beadsPerUnit: 1,
       confidence: 'manual',
       sizeMm,
-      reason: `只解析到直徑 ${sizeMm}mm，未標示顆數，請手動填寫`,
+      reason: `只解析到直徑 ${sizeMm}mm，未標示顆數，顆數預設 1，請在試算表確認`,
     }
   }
 
   // 純款式編號：24款、56亮天蓝
   return {
-    beadsPerUnit: null,
+    beadsPerUnit: 1,
     confidence: 'manual',
     sizeMm: null,
-    reason: '規格僅為款式／顏色編號，未含顆數，請手動填寫',
+    reason: '規格僅為款式／顏色編號，未含顆數，顆數預設 1，請在試算表確認',
   }
 }
