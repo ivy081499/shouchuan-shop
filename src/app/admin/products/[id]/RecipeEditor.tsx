@@ -39,6 +39,7 @@ export default function RecipeEditor({
   const [price, setPrice] = useState(String(priceCents / 100))
   const [currentStatus, setCurrentStatus] = useState(status)
   const [query, setQuery] = useState('')
+  const [zoom, setZoom] = useState<{ url: string; name: string } | null>(null)
   const [msg, setMsg] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
@@ -231,19 +232,23 @@ export default function RecipeEditor({
                     const checked = used.has(b.id)
                     return (
                       <li key={b.id} className="flex flex-wrap items-center gap-4 py-2.5 text-[13px]">
-                        <label className="flex flex-1 min-w-[220px] cursor-pointer items-center gap-3">
+                        {/* 縮圖不能放在 label 內，否則點圖會變成勾選 */}
+                        {b.imageUrl ? (
+                          <button
+                            type="button"
+                            onClick={() => setZoom({ url: b.imageUrl as string, name: b.name })}
+                            title="點開看大圖"
+                            className="h-9 w-9 shrink-0 overflow-hidden border border-hairline transition hover:border-accent"
+                          >
+                            {/* 圖片來源含外部網址（淘寶），next/image 需設定網域，故用原生 img */}
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={b.imageUrl} alt={b.name} className="h-full w-full object-cover" />
+                          </button>
+                        ) : (
+                          <span className="h-9 w-9 shrink-0 border border-hairline bg-sunk" />
+                        )}
+                        <label className="flex flex-1 min-w-[200px] cursor-pointer items-center gap-3">
                           <input type="checkbox" checked={checked} onChange={() => toggle(b.id)} />
-                          {b.imageUrl ? (
-                            // 圖片來源含外部網址（淘寶），next/image 需設定網域，故用原生 img
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img
-                              src={b.imageUrl}
-                              alt=""
-                              className="h-9 w-9 shrink-0 border border-hairline object-cover"
-                            />
-                          ) : (
-                            <span className="h-9 w-9 shrink-0 border border-hairline bg-sunk" />
-                          )}
                           <span>{b.name}</span>
                           {b.sizeMm && <span className="tnum text-ink-soft">{b.sizeMm}mm</span>}
                         </label>
@@ -276,6 +281,34 @@ export default function RecipeEditor({
               </section>
             )
           })}
+        </div>
+      )}
+
+      {zoom && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={`${zoom.name} 的圖片`}
+          onClick={() => setZoom(null)}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-ink/80 p-6"
+        >
+          <div onClick={(e) => e.stopPropagation()} className="w-full max-w-2xl bg-paper p-5">
+            <div className="mb-3 flex items-baseline justify-between gap-4">
+              <h2 className="font-serif text-lg text-ink">{zoom.name}</h2>
+              <button
+                type="button"
+                onClick={() => setZoom(null)}
+                className="text-[13px] text-ink-soft hover:text-ink"
+              >
+                關閉 ✕
+              </button>
+            </div>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={zoom.url} alt={zoom.name} className="max-h-[65vh] w-full bg-sunk object-contain" />
+            <p className="mt-3 text-[12px] text-ink-soft">
+              要換圖請到「珠子」頁面。
+            </p>
+          </div>
         </div>
       )}
     </>
