@@ -161,16 +161,16 @@ export function parseBeadSpec(rawSpec: string | null | undefined): ParsedSpec {
  * 分類只有四種，刻意不細分——選珠時要的是快速縮小範圍，
  * 分太細反而每組只有一兩顆，失去分組意義。
  *
- * 判斷順序有意義：線材與金屬配件的商品名常含石材字樣
+ * 判斷順序有意義：線材與配件的商品名常含石材字樣
  * （例：「沙金隔珠diy手链水晶配件」），必須先於水晶／玉石判斷。
  */
 export function inferCategory(rawTitle: string, rawSpec?: string | null): string {
   const t = `${rawTitle} ${rawSpec ?? ''}`.toLowerCase()
 
-  // 金屬配件：沙金、銀、包金、隔片、花托、轉運珠
+  // 配件：沙金、銀、包金、隔片、花托、轉運珠
   // 必須先於線材判斷——這類商品名常含「编织绳」「手绳」等字樣
   // （例：「古法沙金转运珠…diy手工编织绳配饰挂件」是珠子，不是繩子）
-  if (/沙金|925银|s925|银珠|包金|镀金|隔片|花托|转运珠|桶珠|水泡珠/.test(t)) return '金屬配件'
+  if (/沙金|925银|s925|银珠|包金|镀金|隔片|花托|转运珠|桶珠|水泡珠/.test(t)) return '配件'
 
   // 線材：按長度計價，不是珠子
   if (/弹力线|扁丝|手串绳|线圈|绳项链/.test(t)) return '線材'
