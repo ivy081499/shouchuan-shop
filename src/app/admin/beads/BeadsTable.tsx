@@ -129,6 +129,17 @@ export default function BeadsTable({
 
   const totalPages = Math.max(1, Math.ceil(rows.length / perPage))
   const current = Math.min(page, totalPages)
+
+  /**
+   * 頁碼視窗：以目前頁為中心顯示 5 個。
+   * 靠近首尾時往另一邊補足，避免只剩兩三個可點。
+   */
+  const WINDOW = 5
+  const half = Math.floor(WINDOW / 2)
+  let winStart = Math.max(1, current - half)
+  const winEnd = Math.min(totalPages, winStart + WINDOW - 1)
+  winStart = Math.max(1, winEnd - WINDOW + 1)
+  const pageNumbers = Array.from({ length: winEnd - winStart + 1 }, (_, i) => winStart + i)
   const pageRows = rows.slice((current - 1) * perPage, current * perPage)
 
   // 篩選條件變動就回第一頁，否則會停在空白頁
@@ -451,9 +462,50 @@ export default function BeadsTable({
               >
                 上一頁
               </button>
-              <span className="px-3 tnum text-ink-soft">
-                {current} / {totalPages}
-              </span>
+
+              {/* 視窗沒涵蓋第一頁時，補一個直達鍵 */}
+              {winStart > 1 && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setPage(1)}
+                    className="border border-hairline px-3 py-1.5 tnum text-ink hover:border-accent"
+                  >
+                    1
+                  </button>
+                  {winStart > 2 && <span className="px-1 text-ink-soft">…</span>}
+                </>
+              )}
+
+              {pageNumbers.map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  onClick={() => setPage(n)}
+                  aria-current={n === current ? 'page' : undefined}
+                  className={`border px-3 py-1.5 tnum transition ${
+                    n === current
+                      ? 'border-ink bg-ink text-paper'
+                      : 'border-hairline text-ink hover:border-accent'
+                  }`}
+                >
+                  {n}
+                </button>
+              ))}
+
+              {winEnd < totalPages && (
+                <>
+                  {winEnd < totalPages - 1 && <span className="px-1 text-ink-soft">…</span>}
+                  <button
+                    type="button"
+                    onClick={() => setPage(totalPages)}
+                    className="border border-hairline px-3 py-1.5 tnum text-ink hover:border-accent"
+                  >
+                    {totalPages}
+                  </button>
+                </>
+              )}
+
               <button
                 type="button"
                 onClick={() => setPage(current + 1)}
@@ -472,6 +524,7 @@ export default function BeadsTable({
               onChange={(e) => setPerPage(Number.parseInt(e.target.value, 10))}
               className="border-b border-hairline bg-transparent py-1 text-ink focus:border-accent focus:outline-none"
             >
+              <option value={10}>10</option>
               <option value={25}>25</option>
               <option value={50}>50</option>
               <option value={100}>100</option>

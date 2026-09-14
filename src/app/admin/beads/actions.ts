@@ -86,14 +86,21 @@ const editableSchema = beadInputSchema.pick({
 
 export type BeadPatch = {
   name?: string
-  category?: string
+  /** null = 清空分類 */
+  category?: string | null
   sizeMm?: number | null
   reorderPoint?: number
 }
 
 /** 更新珠子的可編輯欄位 */
 export async function updateBeadFields(beadId: number, patch: BeadPatch) {
-  const parsed = editableSchema.safeParse(patch)
+  // 分類清空時存 null 而非空字串，否則篩選器會多出一個空白籤
+  const normalized: BeadPatch =
+    patch.category !== undefined && patch.category !== null && patch.category.trim() === ''
+      ? { ...patch, category: null }
+      : patch
+
+  const parsed = editableSchema.safeParse(normalized)
   if (!parsed.success) {
     return { ok: false as const, error: parsed.error.issues[0]?.message ?? '輸入格式不正確。' }
   }

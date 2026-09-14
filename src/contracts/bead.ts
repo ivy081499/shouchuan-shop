@@ -16,7 +16,8 @@ export type SupplierInput = z.infer<typeof supplierInputSchema>
 /* ── 珠子 ── */
 export const beadInputSchema = z.object({
   name: z.string().trim().min(1, '請填寫珠子名稱').max(100),
-  category: z.string().trim().max(50).optional(),
+  /** null = 未分類。清空時存 null 而非空字串，避免篩選器多出空白項 */
+  category: z.string().trim().max(50).nullable().optional(),
   sizeMm: z.number().positive('尺寸必須大於 0').max(100).nullable().optional(),
   colorHex: z
     .string()
