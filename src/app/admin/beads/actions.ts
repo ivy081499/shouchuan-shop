@@ -60,7 +60,7 @@ export async function uploadBeadImage(beadId: number, formData: FormData) {
 
   const db = await getDb()
   await setBeadImage(db, beadId, url)
-  revalidatePath('/admin/beads')
+  revalidatePath('/admin/inventory')
   return { ok: true as const, url }
 }
 
@@ -68,7 +68,7 @@ export async function uploadBeadImage(beadId: number, formData: FormData) {
 export async function clearBeadImage(beadId: number) {
   const db = await getDb()
   await setBeadImage(db, beadId, null)
-  revalidatePath('/admin/beads')
+  revalidatePath('/admin/inventory')
   return { ok: true as const }
 }
 
@@ -100,7 +100,7 @@ export async function updateBeadFields(beadId: number, patch: BeadPatch) {
   const db = await getDb()
   const row = await updateBead(db, beadId, parsed.data)
   if (!row) return { ok: false as const, error: '找不到這顆珠子。' }
-  revalidatePath('/admin/beads')
+  revalidatePath('/admin/inventory')
   return { ok: true as const }
 }
 
@@ -118,7 +118,7 @@ export async function adjustBeadStock(beadId: number, deltaQty: number, note?: s
   } catch (e) {
     return { ok: false as const, error: e instanceof Error ? e.message : '調整失敗。' }
   }
-  revalidatePath('/admin/beads')
+  revalidatePath('/admin/inventory')
   revalidatePath('/admin')
   return { ok: true as const }
 }
@@ -131,7 +131,7 @@ export async function archiveBead(beadId: number, archived: boolean) {
   const db = await getDb()
   // 被配方使用中的珠子照樣可封存——封存只代表不再進貨，不影響既有配方
   await updateBead(db, beadId, { isArchived: archived })
-  revalidatePath('/admin/beads')
+  revalidatePath('/admin/inventory')
   return { ok: true as const }
 }
 

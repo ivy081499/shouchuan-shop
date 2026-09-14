@@ -101,7 +101,7 @@ export default function ImportClient({ defaultFxRateX100 }: { defaultFxRateX100:
           <li>入庫共 {done.totalQty} 顆</li>
         </ul>
         <div className="mt-5 flex gap-3">
-          <a href="/admin/beads" className="bg-ink px-5 py-2.5 text-[13px] tracking-wider text-paper hover:bg-accent">
+          <a href="/admin/inventory" className="bg-ink px-5 py-2.5 text-[13px] tracking-wider text-paper hover:bg-accent">
             看珠子成本
           </a>
           <button

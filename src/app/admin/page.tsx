@@ -33,7 +33,7 @@ export default async function AdminHome() {
           hint="先匯入淘寶訂單建立珠子成本，再建手串的配方，報表就會自己算出來。"
           action={
             <Link
-              href="/admin/import"
+              href="/admin/inventory"
               className="inline-block bg-ink px-5 py-2.5 text-[13px] tracking-[0.1em] text-paper hover:bg-accent"
             >
               從匯入淘寶訂單開始
@@ -76,7 +76,7 @@ export default async function AdminHome() {
               </p>
             </Link>
 
-            <Link href="/admin/beads" className="border border-hairline p-5 hover:border-accent">
+            <Link href="/admin/inventory" className="border border-hairline p-5 hover:border-accent">
               <div className="font-serif text-base tracking-wider text-ink">珠子</div>
               <p className="mt-1.5 text-[13px] text-ink-soft">
                 {inventory.lowStockCount > 0

@@ -88,17 +88,35 @@ export function Stat({
   label,
   value,
   hint,
+  sub,
+  explain,
   alert = false,
 }: {
   label: string
   value: React.ReactNode
   hint?: string
+  /** 次要數字，例如同一筆金額的另一種幣別 */
+  sub?: React.ReactNode
+  /** 右上角問號，滑過顯示這個數字怎麼算出來的 */
+  explain?: string
   alert?: boolean
 }) {
   return (
-    <div className="border border-hairline px-5 py-4">
+    <div className="relative border border-hairline px-5 py-4">
+      {explain && (
+        <span
+          title={explain}
+          tabIndex={0}
+          role="note"
+          aria-label={explain}
+          className="absolute right-2 top-2 flex h-4 w-4 cursor-help items-center justify-center rounded-full border border-hairline text-[10px] leading-none text-ink-soft hover:border-accent hover:text-ink focus:outline-none focus-visible:border-accent"
+        >
+          ?
+        </span>
+      )}
       <div className="text-[11px] tracking-[0.15em] text-ink-soft">{label}</div>
       <div className={`mt-1.5 tnum text-2xl ${alert ? 'text-alert' : 'text-ink'}`}>{value}</div>
+      {sub && <div className="tnum text-[13px] text-ink-soft">{sub}</div>}
       {hint && <div className="mt-1 text-[12px] text-ink-soft">{hint}</div>}
     </div>
   )

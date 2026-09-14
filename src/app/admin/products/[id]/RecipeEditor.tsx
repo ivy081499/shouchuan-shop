@@ -38,6 +38,17 @@ export default function RecipeEditor({
   const [lines, setLines] = useState<Line[]>(initialLines)
   const [price, setPrice] = useState(String(priceCents / 100))
   const [currentStatus, setCurrentStatus] = useState(status)
+
+  /**
+   * 上次儲存的內容，供「重設」還原。
+   * 儲存成功後要跟著更新——否則按重設會跳回剛進頁面時的狀態，而不是最後存檔的那次。
+   * 第一次設定配方時 initialLines 為空陣列，重設等於清空。
+   */
+  const [saved, setSaved] = useState({
+    lines: initialLines,
+    price: String(priceCents / 100),
+    status,
+  })
   const [query, setQuery] = useState('')
   const [zoom, setZoom] = useState<{ url: string; name: string } | null>(null)
   const [msg, setMsg] = useState<string | null>(null)
@@ -77,6 +88,26 @@ export default function RecipeEditor({
     setLines((ls) => ls.map((l) => (l.beadId === beadId ? { ...l, qty: Math.max(1, qty) } : l)))
   }
 
+  /** 還原到上次儲存的內容；沒存過就是全空 */
+  function reset() {
+    setLines(saved.lines)
+    setPrice(saved.price)
+    setCurrentStatus(saved.status)
+    setError(null)
+    setMsg(null)
+    setZoom(null)
+  }
+
+  /** 有沒有未儲存的改動——沒有就不必顯示重設按鈕 */
+  const dirty =
+    price !== saved.price ||
+    currentStatus !== saved.status ||
+    lines.length !== saved.lines.length ||
+    lines.some((l) => {
+      const s = saved.lines.find((x) => x.beadId === l.beadId)
+      return !s || s.qty !== l.qty
+    })
+
   function save() {
     setError(null)
     setMsg(null)
@@ -97,6 +128,7 @@ export default function RecipeEditor({
         setError(r2.error)
         return
       }
+      setSaved({ lines, price, status: currentStatus })
       setMsg('已儲存')
     })
   }
@@ -179,6 +211,19 @@ export default function RecipeEditor({
         >
           {pending ? '儲存中…' : '儲存配方'}
         </button>
+        <button
+          onClick={reset}
+          disabled={pending || !dirty}
+          title={
+            saved.lines.length === 0
+              ? '還沒存過配方，重設會清空目前的勾選'
+              : '回到上次儲存的內容'
+          }
+          className="border border-hairline px-5 py-2.5 text-[13px] tracking-wider text-ink hover:border-accent disabled:opacity-40"
+        >
+          重設
+        </button>
+        {dirty && <span className="text-[12px] text-ink-soft">有未儲存的改動</span>}
       </div>
 
       <p className="mb-3 text-[13px] text-ink-soft">

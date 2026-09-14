@@ -154,7 +154,7 @@ export async function confirmImport(
     }
   }
 
-  revalidatePath('/admin/beads')
+  revalidatePath('/admin/inventory')
   revalidatePath('/admin')
   revalidatePath('/admin/reports/purchasing')
 
