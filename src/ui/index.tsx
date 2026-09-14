@@ -104,14 +104,26 @@ export function Stat({
   return (
     <div className="relative border border-hairline px-5 py-4">
       {explain && (
-        <span
-          title={explain}
-          tabIndex={0}
-          role="note"
-          aria-label={explain}
-          className="absolute right-2 top-2 flex h-4 w-4 cursor-help items-center justify-center rounded-full border border-hairline text-[10px] leading-none text-ink-soft hover:border-accent hover:text-ink focus:outline-none focus-visible:border-accent"
-        >
-          ?
+        /*
+         * 自繪 tooltip 而非用 title 屬性：原生 tooltip 要停留約一秒才出現，
+         * 有時根本不觸發，使用者會以為功能壞了。
+         * 純 CSS 的 group-hover／group-focus-within，不需要 client component。
+         */
+        <span className="group absolute right-2 top-2">
+          <span
+            tabIndex={0}
+            role="button"
+            aria-label="說明"
+            className="flex h-4 w-4 cursor-help items-center justify-center rounded-full border border-hairline text-[10px] leading-none text-ink-soft transition group-hover:border-accent group-hover:text-ink focus:outline-none focus-visible:border-accent"
+          >
+            ?
+          </span>
+          <span
+            role="tooltip"
+            className="pointer-events-none invisible absolute right-0 top-6 z-30 w-64 bg-ink px-3 py-2 text-left text-[12px] leading-relaxed font-normal tracking-normal text-paper opacity-0 shadow-lg transition-opacity duration-100 group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100"
+          >
+            {explain}
+          </span>
         </span>
       )}
       <div className="text-[11px] tracking-[0.15em] text-ink-soft">{label}</div>
