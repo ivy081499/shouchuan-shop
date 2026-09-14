@@ -5,12 +5,27 @@ import { parseUpload, confirmImport, type ConfirmRow } from './actions.ts'
 import type { ParsedPurchaseRow } from '@/lib/xlsx-import'
 import { formatTWD, formatCNY } from '@/lib/money'
 import { calcPurchaseCosts } from '@/lib/costing'
+import { useColumnWidths, ColumnResizer, type Column } from '@/ui/ResizableTable.tsx'
 
 const CONFIDENCE_LABEL: Record<string, string> = {
   parsed: '已解析',
   estimated: '約數',
   manual: '要填',
 }
+
+/** 欄位定義。寬度可拖曳調整，會記在瀏覽器 */
+const COLUMNS: Column[] = [
+  { key: 'title', label: '商品（淘寶原文）', width: 260 },
+  { key: 'spec', label: '規格', width: 200 },
+  { key: 'amount', label: '金額', width: 90, align: 'right' },
+  { key: 'qty', label: '件數', width: 60, align: 'right' },
+  { key: 'beads', label: '每件顆數', width: 100, align: 'right', required: true },
+  { key: 'state', label: '狀態', width: 80 },
+  { key: 'cost', label: '單顆成本', width: 100, align: 'right' },
+  { key: 'name', label: '珠子名稱（繁體）', width: 180 },
+  { key: 'link', label: '淘寶連結', width: 80, align: 'center' },
+  { key: 'skip', label: '略過', width: 60, align: 'center', required: true },
+]
 
 export default function ImportClient({ defaultFxRateX100 }: { defaultFxRateX100: number }) {
   const [rows, setRows] = useState<ParsedPurchaseRow[] | null>(null)
@@ -19,6 +34,9 @@ export default function ImportClient({ defaultFxRateX100 }: { defaultFxRateX100:
   const [error, setError] = useState<string | null>(null)
   const [done, setDone] = useState<{ createdBeads: number; updatedBeads: number; totalQty: number; orders: number } | null>(null)
   const [pending, startTransition] = useTransition()
+
+  const { widths, persist, reset } = useColumnWidths('import', COLUMNS)
+  const { hidden, toggle, visible } = useColumnVisibility('import', COLUMNS)
 
   const fxX100 = Math.round((Number.parseFloat(fxRate) || 0) * 100)
 
@@ -150,19 +168,45 @@ export default function ImportClient({ defaultFxRateX100 }: { defaultFxRateX100:
             ——標「要填」的解析不出來，標「約數」的是賣家估計值，建議收到貨實際數過。
           </p>
 
+          <div className="mb-3 flex flex-wrap items-center gap-3">
+            <ColumnToggles columns={COLUMNS} hidden={hidden} onToggle={toggle} />
+            <span className="text-[12px] text-ink-soft">
+              欄寬可拖曳調整（雙擊邊界還原）。「略過」用於彈力線、包裝盒這類不是珠子的品項。
+            </span>
+          </div>
+
           <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-[13px]">
+            <table className="border-collapse text-[13px]" style={{ tableLayout: 'fixed' }}>
+              <colgroup>
+                {visible.map((c) => (
+                  <col key={c.key} style={{ width: widths[c.key] }} />
+                ))}
+              </colgroup>
               <thead>
                 <tr>
-                  <th className="border-b border-hairline pb-2.5 pr-3 text-left font-normal text-ink-soft">商品（淘寶原文）</th>
-                  <th className="border-b border-hairline pb-2.5 pr-3 text-left font-normal text-ink-soft">規格</th>
-                  <th className="border-b border-hairline pb-2.5 pr-3 text-right font-normal text-ink-soft">金額</th>
-                  <th className="border-b border-hairline pb-2.5 pr-3 text-right font-normal text-ink-soft">件數</th>
-                  <th className="border-b border-hairline pb-2.5 pr-3 text-right font-normal text-ink-soft">每件顆數</th>
-                  <th className="border-b border-hairline pb-2.5 pr-3 text-left font-normal text-ink-soft">狀態</th>
-                  <th className="border-b border-hairline pb-2.5 pr-3 text-right font-normal text-ink-soft">單顆成本</th>
-                  <th className="border-b border-hairline pb-2.5 pr-3 text-left font-normal text-ink-soft">珠子名稱（繁體）</th>
-                  <th className="border-b border-hairline pb-2.5 text-center font-normal text-ink-soft">略過</th>
+                  {visible.map((c) => (
+                    <th
+                      key={c.key}
+                      className={`relative border-b border-hairline pb-2.5 pr-3 font-normal text-ink-soft ${
+                        c.align === 'right'
+                          ? 'text-right'
+                          : c.align === 'center'
+                            ? 'text-center'
+                            : 'text-left'
+                      }`}
+                    >
+                      <span className="block truncate">{c.label}</span>
+                      <ColumnResizer
+                        onDrag={(dx) =>
+                          persist({
+                            ...widths,
+                            [c.key]: Math.max(c.minWidth ?? 60, widths[c.key] + dx),
+                          })
+                        }
+                        onReset={() => reset(c.key)}
+                      />
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
@@ -170,75 +214,105 @@ export default function ImportClient({ defaultFxRateX100 }: { defaultFxRateX100:
                   const c = confirms.find((x) => x.index === i)!
                   const cost = previewCost(i)
                   const needsInput = r.countSource === 'manual'
-                  return (
-                    <tr key={i} className={c.skip ? 'opacity-40' : ''}>
-                      <td className="border-b border-hairline py-2 pr-3">
-                        <span className="block max-w-[240px] truncate" title={r.rawTitle}>
+                  const cells: Record<string, React.ReactNode> = {
+                    title: (
+                      <>
+                        <span className="block truncate" title={r.rawTitle}>
                           {r.rawTitle}
                         </span>
-                        <span className="text-[11px] text-ink-soft">{r.supplierName}</span>
-                      </td>
-                      <td className="border-b border-hairline py-2 pr-3">
-                        <span className="block max-w-[180px] truncate" title={r.rawSpec}>
-                          {r.rawSpec || '—'}
+                        <span className="block truncate text-[11px] text-ink-soft">
+                          {r.supplierName}
                         </span>
-                      </td>
-                      <td className="border-b border-hairline py-2 pr-3 text-right tnum">
-                        {formatCNY(r.unitPriceCnyCents)}
-                      </td>
-                      <td className="border-b border-hairline py-2 pr-3 text-right tnum">{r.quantity}</td>
-                      <td className="border-b border-hairline py-2 pr-3 text-right">
-                        <input
-                          type="number"
-                          min={1}
-                          value={c.beadsPerUnit ?? ''}
-                          disabled={c.skip}
-                          onChange={(e) =>
-                            update(i, {
-                              beadsPerUnit: e.target.value ? Number.parseInt(e.target.value, 10) : null,
-                            })
-                          }
-                          className={`w-20 border-b bg-transparent py-1 text-right tnum focus:outline-none ${
-                            needsInput && !c.beadsPerUnit
-                              ? 'border-alert'
-                              : 'border-hairline focus:border-accent'
+                      </>
+                    ),
+                    spec: (
+                      <span className="block truncate" title={r.rawSpec}>
+                        {r.rawSpec || '—'}
+                      </span>
+                    ),
+                    amount: formatCNY(r.unitPriceCnyCents),
+                    qty: r.quantity,
+                    beads: (
+                      <input
+                        type="number"
+                        min={1}
+                        value={c.beadsPerUnit ?? ''}
+                        disabled={c.skip}
+                        onChange={(e) =>
+                          update(i, {
+                            beadsPerUnit: e.target.value ? Number.parseInt(e.target.value, 10) : null,
+                          })
+                        }
+                        className={`w-full border-b bg-transparent py-1 text-right tnum focus:outline-none ${
+                          needsInput && !c.beadsPerUnit
+                            ? 'border-alert'
+                            : 'border-hairline focus:border-accent'
+                        }`}
+                      />
+                    ),
+                    state: (
+                      <span
+                        className={
+                          r.countSource === 'manual'
+                            ? 'text-alert'
+                            : r.countSource === 'estimated'
+                              ? 'text-accent'
+                              : 'text-ink-soft'
+                        }
+                        title={r.parseReason}
+                      >
+                        {CONFIDENCE_LABEL[r.countSource]}
+                      </span>
+                    ),
+                    cost: cost !== null ? formatTWD(cost, true) : '—',
+                    name: (
+                      <input
+                        type="text"
+                        placeholder="留空用淘寶原名"
+                        value={c.beadName}
+                        disabled={c.skip}
+                        onChange={(e) => update(i, { beadName: e.target.value })}
+                        className="w-full border-b border-hairline bg-transparent py-1 focus:border-accent focus:outline-none"
+                      />
+                    ),
+                    link: r.rawUrl ? (
+                      <a
+                        href={r.rawUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-accent underline underline-offset-2"
+                        title={r.rawUrl}
+                      >
+                        看商品
+                      </a>
+                    ) : (
+                      <span className="text-ink-soft">—</span>
+                    ),
+                    skip: (
+                      <input
+                        type="checkbox"
+                        checked={c.skip}
+                        onChange={(e) => update(i, { skip: e.target.checked })}
+                      />
+                    ),
+                  }
+
+                  return (
+                    <tr key={i} className={c.skip ? 'opacity-40' : ''}>
+                      {visible.map((col) => (
+                        <td
+                          key={col.key}
+                          className={`border-b border-hairline py-2 pr-3 ${
+                            col.align === 'right'
+                              ? 'text-right tnum'
+                              : col.align === 'center'
+                                ? 'text-center'
+                                : 'text-left'
                           }`}
-                        />
-                      </td>
-                      <td className="border-b border-hairline py-2 pr-3">
-                        <span
-                          className={
-                            r.countSource === 'manual'
-                              ? 'text-alert'
-                              : r.countSource === 'estimated'
-                                ? 'text-accent'
-                                : 'text-ink-soft'
-                          }
-                          title={r.parseReason}
                         >
-                          {CONFIDENCE_LABEL[r.countSource]}
-                        </span>
-                      </td>
-                      <td className="border-b border-hairline py-2 pr-3 text-right tnum">
-                        {cost !== null ? formatTWD(cost, true) : '—'}
-                      </td>
-                      <td className="border-b border-hairline py-2 pr-3">
-                        <input
-                          type="text"
-                          placeholder="留空用淘寶原名"
-                          value={c.beadName}
-                          disabled={c.skip}
-                          onChange={(e) => update(i, { beadName: e.target.value })}
-                          className="w-40 border-b border-hairline bg-transparent py-1 focus:border-accent focus:outline-none"
-                        />
-                      </td>
-                      <td className="border-b border-hairline py-2 text-center">
-                        <input
-                          type="checkbox"
-                          checked={c.skip}
-                          onChange={(e) => update(i, { skip: e.target.checked })}
-                        />
-                      </td>
+                          {cells[col.key]}
+                        </td>
+                      ))}
                     </tr>
                   )
                 })}
