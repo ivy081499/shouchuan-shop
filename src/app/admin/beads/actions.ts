@@ -1,7 +1,7 @@
 'use server'
 
 import { getDb } from '@/data/db'
-import { setBeadImage, updateBead, adjustStock, listCategories } from '@/data/beads'
+import { setBeadImage, updateBead, adjustStock, listCategories, getBeadById } from '@/data/beads'
 import { beadInputSchema } from '@/contracts/bead'
 import { revalidatePath } from 'next/cache'
 
@@ -105,22 +105,33 @@ export async function updateBeadFields(beadId: number, patch: BeadPatch) {
 }
 
 /**
- * 手動調整庫存。
- * 走 adjustStock 才會同步寫 stock_ledger（資料模型不變量）。
+ * 設定庫存為指定數量（盤點用）。
+ *
+ * 店主填的是「現在實際有幾顆」，不是「增減多少」——
+ * 數完珠子直接填數字比心算差額直覺。
+ * 內部仍轉成差額走 adjustStock，確保每次異動都寫 stock_ledger（資料模型不變量）。
  */
-export async function adjustBeadStock(beadId: number, deltaQty: number, note?: string) {
-  if (!Number.isInteger(deltaQty) || deltaQty === 0) {
-    return { ok: false as const, error: '調整數量必須是不為 0 的整數。' }
+export async function setBeadStock(beadId: number, targetQty: number, note?: string) {
+  if (!Number.isInteger(targetQty) || targetQty < 0) {
+    return { ok: false as const, error: '庫存要填 0 或正整數。' }
   }
   const db = await getDb()
+  const bead = await getBeadById(db, beadId)
+  if (!bead) return { ok: false as const, error: '找不到這顆珠子。' }
+
+  // 用資料庫當下的值算差額，不用畫面上的舊值——
+  // 兩者之間庫存可能已被別處改動（例如訂單付款扣庫存）
+  const delta = targetQty - bead.stockQty
+  if (delta === 0) return { ok: true as const, stockQty: targetQty }
+
   try {
-    await adjustStock(db, beadId, deltaQty, 'manual_adjust', null, note?.trim() || '後台手動調整')
+    await adjustStock(db, beadId, delta, 'manual_adjust', null, note?.trim() || '後台手動盤點')
   } catch (e) {
     return { ok: false as const, error: e instanceof Error ? e.message : '調整失敗。' }
   }
   revalidatePath('/admin/inventory')
   revalidatePath('/admin')
-  return { ok: true as const }
+  return { ok: true as const, stockQty: targetQty }
 }
 
 /**
