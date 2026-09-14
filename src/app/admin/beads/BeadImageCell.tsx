@@ -75,7 +75,8 @@ export default function BeadImageCell({
           onClick={() => (url ? setOpen(true) : pick())}
           disabled={pending}
           title={url ? '點開看大圖' : '上傳圖片'}
-          className="h-11 w-11 shrink-0 overflow-hidden border border-hairline bg-sunk transition hover:border-accent disabled:opacity-50"
+          style={{ height: 'var(--bead-img)', width: 'var(--bead-img)' }}
+          className="shrink-0 overflow-hidden border border-hairline bg-sunk transition hover:border-accent disabled:opacity-50"
         >
           {url ? (
             // 圖片來源含外部網址（淘寶），next/image 需設定網域，故用原生 img
