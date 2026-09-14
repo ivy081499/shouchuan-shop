@@ -4,6 +4,7 @@ import { getDb } from '@/data/db'
 import { upsertSupplierByName, findBeadBySource, createBead, adjustStock } from '@/data/beads'
 import { calcPurchaseCosts } from '@/lib/costing'
 import { parseTaobaoXlsx, type ParsedPurchaseRow } from '@/lib/xlsx-import'
+import { inferCategory } from '@/lib/bead-spec'
 import { purchases, purchaseItems, beads } from '@db/schema'
 import { eq } from 'drizzle-orm'
 import { revalidatePath } from 'next/cache'
@@ -111,6 +112,8 @@ export async function confirmImport(
       if (!bead) {
         bead = await createBead(db, {
           name: confirm.beadName || row.rawTitle.slice(0, 40),
+          // 依商品名推導材質分類，讓後台選珠時能分組與篩選
+          category: inferCategory(row.rawTitle, row.rawSpec),
           sizeMm: row.sizeMm,
           supplierId,
           sourceUrl: row.rawUrl || null,

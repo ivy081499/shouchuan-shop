@@ -1,0 +1,1 @@
+ALTER TABLE `beads` ADD `image_url` text;

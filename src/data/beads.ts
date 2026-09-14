@@ -76,6 +76,7 @@ export async function listBeads(db: Db, filter: BeadFilter = {}) {
       category: beads.category,
       sizeMm: beads.sizeMm,
       colorHex: beads.colorHex,
+      imageUrl: beads.imageUrl,
       supplierId: beads.supplierId,
       supplierName: suppliers.name,
       sourceUrl: beads.sourceUrl,
@@ -197,4 +198,15 @@ export async function listCategories(db: Db): Promise<string[]> {
     .from(beads)
     .where(and(eq(beads.isArchived, false), sql`${beads.category} IS NOT NULL`))
   return rows.map((r) => r.category).filter((c): c is string => c !== null).sort()
+}
+
+/**
+ * 設定珠子圖片。
+ * url 為 null 代表清除圖片。
+ */
+export async function setBeadImage(db: Db, beadId: number, url: string | null) {
+  await db
+    .update(beads)
+    .set({ imageUrl: url, updatedAt: Math.floor(Date.now() / 1000) })
+    .where(eq(beads.id, beadId))
 }

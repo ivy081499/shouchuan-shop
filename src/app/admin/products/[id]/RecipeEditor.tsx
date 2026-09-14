@@ -12,6 +12,7 @@ export interface BeadOption {
   unitCostCents: number
   stockQty: number
   category: string | null
+  imageUrl: string | null
 }
 
 interface Line {
@@ -37,6 +38,7 @@ export default function RecipeEditor({
   const [lines, setLines] = useState<Line[]>(initialLines)
   const [price, setPrice] = useState(String(priceCents / 100))
   const [currentStatus, setCurrentStatus] = useState(status)
+  const [query, setQuery] = useState('')
   const [msg, setMsg] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
@@ -98,7 +100,22 @@ export default function RecipeEditor({
     })
   }
 
-  const categories = [...new Set(beads.map((b) => b.category ?? '未分類'))].sort()
+  /**
+   * 搜尋過濾。已勾選的珠子一律保留——否則搜尋時會從畫面消失，
+   * 讓人以為配方被清掉了。
+   */
+  const q = query.trim().toLowerCase()
+  const visibleBeads = q
+    ? beads.filter(
+        (b) =>
+          used.has(b.id) ||
+          b.name.toLowerCase().includes(q) ||
+          (b.sizeMm !== null && String(b.sizeMm).includes(q)) ||
+          (b.category ?? '').toLowerCase().includes(q),
+      )
+    : beads
+
+  const categories = [...new Set(visibleBeads.map((b) => b.category ?? '未分類'))].sort()
 
   return (
     <>
@@ -165,16 +182,43 @@ export default function RecipeEditor({
 
       <p className="mb-3 text-[13px] text-ink-soft">
         勾選這條手串用到的珠子，填上各用幾顆。上方成本與毛利會即時重算。
+        庫存 0 的照樣可以勾——先把配方排好，缺的貨再去補。
       </p>
+
+      <div className="mb-4 flex flex-wrap items-center gap-4">
+        <input
+          type="search"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="搜尋珠子名稱、尺寸或分類…"
+          className="w-full max-w-xs border-b border-hairline bg-transparent py-1.5 text-[13px] focus:border-accent focus:outline-none"
+        />
+        <span className="text-[12px] text-ink-soft">
+          {q ? `符合 ${visibleBeads.length} 種` : `共 ${beads.length} 種`}
+          {lines.length > 0 && `，已選 ${lines.length} 種`}
+        </span>
+        {q && (
+          <button
+            onClick={() => setQuery('')}
+            className="text-[12px] text-ink-soft underline hover:text-ink"
+          >
+            清除搜尋
+          </button>
+        )}
+      </div>
 
       {beads.length === 0 ? (
         <div className="border border-dashed border-hairline px-8 py-12 text-center text-[13px] text-ink-soft">
           還沒有珠子可選。先到「進貨」匯入淘寶訂單。
         </div>
+      ) : visibleBeads.length === 0 ? (
+        <div className="border border-dashed border-hairline px-8 py-12 text-center text-[13px] text-ink-soft">
+          找不到符合「{query}」的珠子。
+        </div>
       ) : (
         <div className="space-y-8">
           {categories.map((cat) => {
-            const group = beads.filter((b) => (b.category ?? '未分類') === cat)
+            const group = visibleBeads.filter((b) => (b.category ?? '未分類') === cat)
             if (group.length === 0) return null
             return (
               <section key={cat}>
@@ -189,6 +233,17 @@ export default function RecipeEditor({
                       <li key={b.id} className="flex flex-wrap items-center gap-4 py-2.5 text-[13px]">
                         <label className="flex flex-1 min-w-[220px] cursor-pointer items-center gap-3">
                           <input type="checkbox" checked={checked} onChange={() => toggle(b.id)} />
+                          {b.imageUrl ? (
+                            // 圖片來源含外部網址（淘寶），next/image 需設定網域，故用原生 img
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={b.imageUrl}
+                              alt=""
+                              className="h-9 w-9 shrink-0 border border-hairline object-cover"
+                            />
+                          ) : (
+                            <span className="h-9 w-9 shrink-0 border border-hairline bg-sunk" />
+                          )}
                           <span>{b.name}</span>
                           {b.sizeMm && <span className="tnum text-ink-soft">{b.sizeMm}mm</span>}
                         </label>

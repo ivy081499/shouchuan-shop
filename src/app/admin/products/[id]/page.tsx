@@ -42,6 +42,7 @@ export default async function ProductDetailPage({
           unitCostCents: b.unitCostCents,
           stockQty: b.stockQty,
           category: b.category,
+          imageUrl: b.imageUrl,
         }))}
         initialLines={recipe.map((r) => ({ beadId: r.beadId, qty: r.qty }))}
       />

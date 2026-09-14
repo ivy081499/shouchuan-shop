@@ -57,6 +57,17 @@ export const beads = sqliteTable(
     /** 顏色描述，供前台「配方透視」顯示用 */
     colorHex: text('color_hex'),
 
+    /**
+     * 珠子圖片網址。後台選珠時顯示縮圖，用來辨認「沙金桶珠 24款」這類
+     * 光看名字認不出的品項（ADR-0010）。
+     *
+     * 兩種來源：
+     *   - 淘寶商品頁的規格縮圖（匯入時自動帶入，可能為該商品共用主圖）
+     *   - 店主自行上傳（存 R2，此處存完整網址或 R2 key）
+     * 為 null 時介面顯示占位方塊，不影響任何計算。
+     */
+    imageUrl: text('image_url'),
+
     supplierId: integer('supplier_id').references(() => suppliers.id, { onDelete: 'set null' }),
 
     /** 淘寶商品連結，採購報表直接給出可點連結 */

@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { getDb } from '@/data/db'
 import { listBeads } from '@/data/beads'
 import { PageTitle, Table, Th, Td, Money, Empty, Stat } from '@/ui'
+import BeadImageCell from './BeadImageCell.tsx'
 
 export const dynamic = 'force-dynamic'
 
@@ -14,7 +15,7 @@ export default async function BeadsPage() {
 
   return (
     <>
-      <PageTitle note="每一顆珠的成本與庫存。成本由進貨自動計算，不必手動維護。">珠子</PageTitle>
+      <PageTitle note="每一顆珠的成本與庫存。成本由進貨自動計算，不必手動維護。點圖片格可上傳或更換照片。">珠子</PageTitle>
 
       <div className="mb-8 grid grid-cols-2 gap-4 sm:grid-cols-3">
         <Stat label="品項" value={beads.length} hint="不含已封存" />
@@ -44,6 +45,7 @@ export default async function BeadsPage() {
         <Table>
           <thead>
             <tr>
+              <Th>圖</Th>
               <Th>名稱</Th>
               <Th>分類</Th>
               <Th align="right">尺寸</Th>
@@ -59,6 +61,9 @@ export default async function BeadsPage() {
               const isLow = b.reorderPoint > 0 && b.stockQty <= b.reorderPoint
               return (
                 <tr key={b.id}>
+                  <Td>
+                    <BeadImageCell beadId={b.id} name={b.name} initialUrl={b.imageUrl} />
+                  </Td>
                   <Td>{b.name}</Td>
                   <Td>{b.category ?? '—'}</Td>
                   <Td align="right" numeric>

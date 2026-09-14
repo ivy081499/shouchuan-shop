@@ -9,3 +9,4 @@ backups/
 .data/
 .claude/
 *.xlsx
+public/uploads/
