@@ -2,7 +2,7 @@
 
 import { getDb } from '@/data/db'
 import { upsertSupplierByName, findBeadBySource, createBead, adjustStock } from '@/data/beads'
-import { calcPurchaseCosts } from '@/lib/costing'
+import { calcPurchaseCosts, calcMovingAverageCost } from '@/lib/costing'
 import { parseTaobaoXlsx, type ParsedPurchaseRow } from '@/lib/xlsx-import'
 import { inferCategory } from '@/lib/bead-spec'
 import { purchases, purchaseItems, beads } from '@db/schema'
@@ -126,10 +126,22 @@ export async function confirmImport(
         })
         createdBeads++
       } else {
-        // 既有珠子：更新為最新成本
+        /*
+         * 既有珠子：成本取移動加權平均，不直接覆蓋成最新價。
+         * 覆蓋會讓庫存值偏離實際花費（舊批便宜、新批貴時尤其明顯）。
+         *
+         * bead.stockQty 是這次進貨【之前】的庫存——下方 adjustStock 才會加上新的量，
+         * 順序不可對調，否則分母會把新進的顆數算兩次。
+         */
+        const avgCost = calcMovingAverageCost(
+          bead.stockQty,
+          bead.unitCostCents,
+          cost.totalBeads,
+          cost.lineTotalCents,
+        )
         await db
           .update(beads)
-          .set({ unitCostCents: cost.unitCostCents, updatedAt: Math.floor(Date.now() / 1000) })
+          .set({ unitCostCents: avgCost, updatedAt: Math.floor(Date.now() / 1000) })
           .where(eq(beads.id, bead.id))
         updatedBeads++
       }

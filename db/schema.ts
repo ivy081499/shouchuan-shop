@@ -79,7 +79,10 @@ export const beads = sqliteTable(
 
     /**
      * 目前單顆成本（TWD 分）。
-     * 由最近一次進貨計算並回寫；歷史訂單不追溯（訂單存快照）。
+     *
+     * 重複進貨同一種珠子時取【移動加權平均】，不覆蓋成最新價
+     * （見 calcMovingAverageCost）——覆蓋會讓庫存值偏離實際花費。
+     * 歷史訂單不追溯（訂單存快照）。
      */
     unitCostCents: integer('unit_cost_cents').notNull().default(0),
 
