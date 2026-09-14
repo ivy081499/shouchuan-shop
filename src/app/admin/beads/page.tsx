@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { getDb } from '@/data/db'
-import { listBeads } from '@/data/beads'
+import { listBeads, listCategories } from '@/data/beads'
 import { PageTitle, Money, Empty, Stat } from '@/ui'
 import BeadsTable from './BeadsTable.tsx'
 
@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic'
 
 export default async function BeadsPage() {
   const db = await getDb()
-  const beads = await listBeads(db)
+  const [beads, categories] = await Promise.all([listBeads(db), listCategories(db)])
 
   const totalValue = beads.reduce((s, b) => s + b.stockQty * b.unitCostCents, 0)
   const lowStock = beads.filter((b) => b.reorderPoint > 0 && b.stockQty <= b.reorderPoint)
@@ -45,6 +45,7 @@ export default async function BeadsPage() {
         />
       ) : (
         <BeadsTable
+          categories={categories}
           beads={beads.map((b) => ({
             id: b.id,
             name: b.name,

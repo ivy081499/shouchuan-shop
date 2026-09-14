@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Table, Th, Td, Money } from '@/ui'
 import BeadImageCell from './BeadImageCell.tsx'
+import EditableCell from './EditableCell.tsx'
+import StockCell from './StockCell.tsx'
 
 export interface BeadRow {
   id: number
@@ -18,7 +20,13 @@ export interface BeadRow {
 
 const SIZE_KEY = 'beads.imageSize'
 
-export default function BeadsTable({ beads }: { beads: BeadRow[] }) {
+export default function BeadsTable({
+  beads,
+  categories,
+}: {
+  beads: BeadRow[]
+  categories: string[]
+}) {
   const [query, setQuery] = useState('')
   const [size, setSize] = useState<'sm' | 'lg'>('sm')
   const [page, setPage] = useState(1)
@@ -77,6 +85,9 @@ export default function BeadsTable({ beads }: { beads: BeadRow[] }) {
         />
         <span className="text-[12px] text-ink-soft">
           {query ? `符合 ${rows.length} 種` : `共 ${beads.length} 種`}
+        </span>
+        <span className="text-[12px] text-ink-soft">
+          虛線底的欄位點一下可直接改
         </span>
         {query && (
           <button
@@ -142,19 +153,34 @@ export default function BeadsTable({ beads }: { beads: BeadRow[] }) {
                   <Td>
                     <BeadImageCell beadId={b.id} name={b.name} initialUrl={b.imageUrl} />
                   </Td>
-                  <Td>{b.name}</Td>
-                  <Td>{b.category ?? '—'}</Td>
+                  <Td>
+                    <EditableCell beadId={b.id} field="name" value={b.name} />
+                  </Td>
+                  <Td>
+                    <EditableCell
+                      beadId={b.id}
+                      field="category"
+                      value={b.category}
+                      options={categories}
+                      placeholder="未分類"
+                    />
+                  </Td>
                   <Td align="right" numeric>
-                    {b.sizeMm ? `${b.sizeMm}mm` : '—'}
+                    <EditableCell beadId={b.id} field="sizeMm" value={b.sizeMm} align="right" />
                   </Td>
                   <Td align="right" numeric>
                     <Money cents={b.unitCostCents} showCents />
                   </Td>
-                  <Td align="right" numeric alert={isLow}>
-                    {b.stockQty}
+                  <Td align="right" numeric>
+                    <StockCell beadId={b.id} stockQty={b.stockQty} isLow={isLow} />
                   </Td>
                   <Td align="right" numeric>
-                    {b.reorderPoint || '—'}
+                    <EditableCell
+                      beadId={b.id}
+                      field="reorderPoint"
+                      value={b.reorderPoint || null}
+                      align="right"
+                    />
                   </Td>
                   <Td align="right" numeric>
                     <Money cents={b.stockQty * b.unitCostCents} />

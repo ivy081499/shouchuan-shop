@@ -1,7 +1,8 @@
 'use server'
 
 import { getDb } from '@/data/db'
-import { setBeadImage } from '@/data/beads'
+import { setBeadImage, updateBead, adjustStock, listCategories } from '@/data/beads'
+import { beadInputSchema } from '@/contracts/bead'
 import { revalidatePath } from 'next/cache'
 
 /** 可接受的圖片格式與大小上限 */
@@ -69,4 +70,73 @@ export async function clearBeadImage(beadId: number) {
   await setBeadImage(db, beadId, null)
   revalidatePath('/admin/beads')
   return { ok: true as const }
+}
+
+/* ────────────────────────────────────────────────────────────
+   珠子欄位編輯
+   ──────────────────────────────────────────────────────────── */
+
+/** 店主可改的欄位。成本與庫存不在此列——成本由進貨算出，庫存要走調整才有流水帳 */
+const editableSchema = beadInputSchema.pick({
+  name: true,
+  category: true,
+  sizeMm: true,
+  reorderPoint: true,
+}).partial()
+
+export type BeadPatch = {
+  name?: string
+  category?: string
+  sizeMm?: number | null
+  reorderPoint?: number
+}
+
+/** 更新珠子的可編輯欄位 */
+export async function updateBeadFields(beadId: number, patch: BeadPatch) {
+  const parsed = editableSchema.safeParse(patch)
+  if (!parsed.success) {
+    return { ok: false as const, error: parsed.error.issues[0]?.message ?? '輸入格式不正確。' }
+  }
+  const db = await getDb()
+  const row = await updateBead(db, beadId, parsed.data)
+  if (!row) return { ok: false as const, error: '找不到這顆珠子。' }
+  revalidatePath('/admin/beads')
+  return { ok: true as const }
+}
+
+/**
+ * 手動調整庫存。
+ * 走 adjustStock 才會同步寫 stock_ledger（資料模型不變量）。
+ */
+export async function adjustBeadStock(beadId: number, deltaQty: number, note?: string) {
+  if (!Number.isInteger(deltaQty) || deltaQty === 0) {
+    return { ok: false as const, error: '調整數量必須是不為 0 的整數。' }
+  }
+  const db = await getDb()
+  try {
+    await adjustStock(db, beadId, deltaQty, 'manual_adjust', null, note?.trim() || '後台手動調整')
+  } catch (e) {
+    return { ok: false as const, error: e instanceof Error ? e.message : '調整失敗。' }
+  }
+  revalidatePath('/admin/beads')
+  revalidatePath('/admin')
+  return { ok: true as const }
+}
+
+/**
+ * 封存珠子（不是刪除）。
+ * 歷史配方仍需保留這筆資料，故外鍵為 restrict，只能封存。
+ */
+export async function archiveBead(beadId: number, archived: boolean) {
+  const db = await getDb()
+  // 被配方使用中的珠子照樣可封存——封存只代表不再進貨，不影響既有配方
+  await updateBead(db, beadId, { isArchived: archived })
+  revalidatePath('/admin/beads')
+  return { ok: true as const }
+}
+
+/** 現有分類清單，供編輯時的下拉選單 */
+export async function getCategories() {
+  const db = await getDb()
+  return listCategories(db)
 }
