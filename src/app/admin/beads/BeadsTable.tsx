@@ -16,13 +16,30 @@ export interface BeadRow {
   stockQty: number
   reorderPoint: number
   supplierName: string | null
+  /** 淘寶原始商品名與規格，供對照匯出的 Excel */
+  sourceTitle: string | null
+  sourceSpec: string | null
 }
 
 const SIZE_KEY = 'beads.imageSize'
+const COLS_KEY = 'beads.hiddenCols'
+
+/** 可隱藏的欄位。名稱與圖不列入——那是辨認珠子的依據，藏了就沒得看 */
+const HIDEABLE = [
+  { key: 'sourceSpec', label: '淘寶原文' },
+  { key: 'category', label: '分類' },
+  { key: 'sizeMm', label: '尺寸' },
+  { key: 'unitCostCents', label: '單顆成本' },
+  { key: 'stockQty', label: '庫存' },
+  { key: 'reorderPoint', label: '安全庫存' },
+  { key: 'stockValue', label: '庫存值' },
+  { key: 'supplierName', label: '供應商' },
+] as const
+type ColKey = (typeof HIDEABLE)[number]['key']
 const UNCATEGORIZED = '（未分類）'
 const NO_SUPPLIER = '（無供應商）'
 
-type SortKey = 'name' | 'category' | 'sizeMm' | 'unitCostCents' | 'stockQty' | 'reorderPoint' | 'stockValue' | 'supplierName'
+type SortKey = 'name' | 'sourceSpec' | 'category' | 'sizeMm' | 'unitCostCents' | 'stockQty' | 'reorderPoint' | 'stockValue' | 'supplierName'
 type NumField = 'sizeMm' | 'unitCostCents' | 'stockQty' | 'reorderPoint'
 
 /** 數值欄的範圍條件，空字串代表不限 */
@@ -51,6 +68,8 @@ export default function BeadsTable({
 
   const [sortKey, setSortKey] = useState<SortKey>('name')
   const [sortAsc, setSortAsc] = useState(true)
+  const [hidden, setHidden] = useState<Set<ColKey>>(new Set())
+  const [colsOpen, setColsOpen] = useState(false)
 
   // localStorage 可能被停用（無痕視窗、封鎖網站資料）
   useEffect(() => {
@@ -63,6 +82,19 @@ export default function BeadsTable({
   }, [])
 
   useEffect(() => {
+    try {
+      const raw = localStorage.getItem(COLS_KEY)
+      if (raw) {
+        const keys = JSON.parse(raw) as string[]
+        const valid = HIDEABLE.map((c) => c.key) as readonly string[]
+        setHidden(new Set(keys.filter((k): k is ColKey => valid.includes(k))))
+      }
+    } catch {
+      /* 讀不到就全部顯示 */
+    }
+  }, [])
+
+  useEffect(() => {
     document.documentElement.style.setProperty('--bead-img', size === 'lg' ? '150px' : '44px')
     try {
       localStorage.setItem(SIZE_KEY, size)
@@ -70,6 +102,22 @@ export default function BeadsTable({
       /* 存不進去不影響本次操作 */
     }
   }, [size])
+
+  function toggleCol(k: ColKey) {
+    setHidden((prev) => {
+      const next = new Set(prev)
+      if (next.has(k)) next.delete(k)
+      else next.add(k)
+      try {
+        localStorage.setItem(COLS_KEY, JSON.stringify([...next]))
+      } catch {
+        /* 存不進去不影響本次操作 */
+      }
+      return next
+    })
+  }
+
+  const show = (k: ColKey) => !hidden.has(k)
 
   const supplierOptions = useMemo(
     () => [...new Set(beads.map((b) => b.supplierName ?? NO_SUPPLIER))].sort(),
@@ -95,7 +143,13 @@ export default function BeadsTable({
   const rows = useMemo(() => {
     const nameQ = fName.trim().toLowerCase()
     const out = beads.filter((b) => {
-      if (nameQ && !b.name.toLowerCase().includes(nameQ)) return false
+      if (
+        nameQ &&
+        !b.name.toLowerCase().includes(nameQ) &&
+        !(b.sourceTitle ?? '').toLowerCase().includes(nameQ) &&
+        !(b.sourceSpec ?? '').toLowerCase().includes(nameQ)
+      )
+        return false
       if (fCats.size > 0 && !fCats.has(b.category ?? UNCATEGORIZED)) return false
       if (fSups.size > 0 && !fSups.has(b.supplierName ?? NO_SUPPLIER)) return false
       if (!inRange(b.sizeMm, fSize)) return false
@@ -280,7 +334,40 @@ export default function BeadsTable({
             </button>
           )}
 
-          <div className="ml-auto flex items-center gap-2 text-[13px]">
+          <div className="relative ml-auto flex items-center gap-4 text-[13px]">
+            <button
+              type="button"
+              onClick={() => setColsOpen((v) => !v)}
+              className="border border-hairline px-3 py-1 text-ink-soft transition hover:border-accent hover:text-ink"
+            >
+              欄位{hidden.size > 0 && `（隱藏 ${hidden.size}）`}
+            </button>
+
+            {colsOpen && (
+              <>
+                {/* 點空白處收起來 */}
+                <div className="fixed inset-0 z-20" onClick={() => setColsOpen(false)} />
+                <div className="absolute right-0 top-8 z-30 w-44 border border-hairline bg-paper py-1 shadow-sm">
+                  {HIDEABLE.map((c) => (
+                    <label
+                      key={c.key}
+                      className="flex cursor-pointer items-center gap-2 px-3 py-1.5 hover:bg-sunk"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={show(c.key)}
+                        onChange={() => toggleCol(c.key)}
+                      />
+                      <span className="text-ink">{c.label}</span>
+                    </label>
+                  ))}
+                  <p className="border-t border-hairline px-3 pt-1.5 text-[11px] text-ink-soft">
+                    圖與名稱固定顯示
+                  </p>
+                </div>
+              </>
+            )}
+
             <span className="text-ink-soft">圖片</span>
             <div className="flex border border-hairline">
               <button
@@ -314,7 +401,7 @@ export default function BeadsTable({
               type="search"
               value={fName}
               onChange={(e) => setFName(e.target.value)}
-              placeholder="例：和田玉"
+              placeholder="中文名或淘寶原文皆可"
               className="mt-1 w-full border-b border-hairline bg-transparent py-1 text-[13px] focus:border-accent focus:outline-none"
             />
           </label>
@@ -388,13 +475,14 @@ export default function BeadsTable({
             <tr>
               <Th>圖</Th>
               <SortTh k="name">名稱</SortTh>
-              <SortTh k="category">分類</SortTh>
-              <SortTh k="sizeMm" align="right">尺寸</SortTh>
-              <SortTh k="unitCostCents" align="right">單顆成本</SortTh>
-              <SortTh k="stockQty" align="right">庫存</SortTh>
-              <SortTh k="reorderPoint" align="right">安全庫存</SortTh>
-              <SortTh k="stockValue" align="right">庫存值</SortTh>
-              <SortTh k="supplierName">供應商</SortTh>
+              {show('sourceSpec') && <SortTh k="sourceSpec">淘寶原文</SortTh>}
+              {show('category') && <SortTh k="category">分類</SortTh>}
+              {show('sizeMm') && <SortTh k="sizeMm" align="right">尺寸</SortTh>}
+              {show('unitCostCents') && <SortTh k="unitCostCents" align="right">單顆成本</SortTh>}
+              {show('stockQty') && <SortTh k="stockQty" align="right">庫存</SortTh>}
+              {show('reorderPoint') && <SortTh k="reorderPoint" align="right">安全庫存</SortTh>}
+              {show('stockValue') && <SortTh k="stockValue" align="right">庫存值</SortTh>}
+              {show('supplierName') && <SortTh k="supplierName">供應商</SortTh>}
             </tr>
           </thead>
           <tbody>
@@ -408,36 +496,59 @@ export default function BeadsTable({
                   <Td>
                     <EditableCell beadId={b.id} field="name" value={b.name} />
                   </Td>
-                  <Td>
-                    <EditableCell
-                      beadId={b.id}
-                      field="category"
-                      value={b.category}
-                      options={categories}
-                      placeholder="未分類"
-                    />
-                  </Td>
-                  <Td align="right" numeric>
-                    <EditableCell beadId={b.id} field="sizeMm" value={b.sizeMm} align="right" />
-                  </Td>
-                  <Td align="right" numeric>
-                    <Money cents={b.unitCostCents} showCents />
-                  </Td>
-                  <Td align="right" numeric>
-                    <StockCell beadId={b.id} stockQty={b.stockQty} isLow={isLow} />
-                  </Td>
-                  <Td align="right" numeric>
-                    <EditableCell
-                      beadId={b.id}
-                      field="reorderPoint"
-                      value={b.reorderPoint || null}
-                      align="right"
-                    />
-                  </Td>
-                  <Td align="right" numeric>
-                    <Money cents={b.stockQty * b.unitCostCents} />
-                  </Td>
-                  <Td>{b.supplierName ?? '—'}</Td>
+                  {show('sourceSpec') && (
+                    <Td>
+                      {/* 滑過看完整商品名；規格是對照 Excel 最快的線索 */}
+                      <span
+                        title={b.sourceTitle ?? undefined}
+                        className="block max-w-[14rem] truncate text-ink-soft"
+                      >
+                        {b.sourceSpec ?? '—'}
+                      </span>
+                    </Td>
+                  )}
+                  {show('category') && (
+                    <Td>
+                      <EditableCell
+                        beadId={b.id}
+                        field="category"
+                        value={b.category}
+                        options={categories}
+                        placeholder="未分類"
+                      />
+                    </Td>
+                  )}
+                  {show('sizeMm') && (
+                    <Td align="right" numeric>
+                      <EditableCell beadId={b.id} field="sizeMm" value={b.sizeMm} align="right" />
+                    </Td>
+                  )}
+                  {show('unitCostCents') && (
+                    <Td align="right" numeric>
+                      <Money cents={b.unitCostCents} showCents />
+                    </Td>
+                  )}
+                  {show('stockQty') && (
+                    <Td align="right" numeric>
+                      <StockCell beadId={b.id} stockQty={b.stockQty} isLow={isLow} />
+                    </Td>
+                  )}
+                  {show('reorderPoint') && (
+                    <Td align="right" numeric>
+                      <EditableCell
+                        beadId={b.id}
+                        field="reorderPoint"
+                        value={b.reorderPoint || null}
+                        align="right"
+                      />
+                    </Td>
+                  )}
+                  {show('stockValue') && (
+                    <Td align="right" numeric>
+                      <Money cents={b.stockQty * b.unitCostCents} />
+                    </Td>
+                  )}
+                  {show('supplierName') && <Td>{b.supplierName ?? '—'}</Td>}
                 </tr>
               )
             })}

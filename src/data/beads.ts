@@ -81,6 +81,7 @@ export async function listBeads(db: Db, filter: BeadFilter = {}) {
       supplierId: beads.supplierId,
       supplierName: suppliers.name,
       sourceUrl: beads.sourceUrl,
+      sourceTitle: beads.sourceTitle,
       sourceSpec: beads.sourceSpec,
       unitCostCents: beads.unitCostCents,
       stockQty: beads.stockQty,

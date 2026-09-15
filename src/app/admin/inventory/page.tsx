@@ -44,6 +44,8 @@ export default async function InventoryPage() {
           stockQty: b.stockQty,
           reorderPoint: b.reorderPoint,
           supplierName: b.supplierName,
+          sourceTitle: b.sourceTitle,
+          sourceSpec: b.sourceSpec,
         }))}
       />
     )
