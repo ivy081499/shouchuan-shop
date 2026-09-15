@@ -1,7 +1,14 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { Table, Th, Td, Money } from '@/ui'
+import { Money } from '@/ui'
+import {
+  useColumnWidths,
+  useColumnVisibility,
+  ColumnToggles,
+  ColumnResizer,
+  type Column,
+} from '@/ui/ResizableTable'
 import BeadImageCell from './BeadImageCell.tsx'
 import EditableCell from './EditableCell.tsx'
 import StockCell from './StockCell.tsx'
@@ -22,20 +29,23 @@ export interface BeadRow {
 }
 
 const SIZE_KEY = 'beads.imageSize'
-const COLS_KEY = 'beads.hiddenCols'
 
-/** 可隱藏的欄位。名稱與圖不列入——那是辨認珠子的依據，藏了就沒得看 */
-const HIDEABLE = [
-  { key: 'sourceSpec', label: '淘寶原文' },
-  { key: 'category', label: '分類' },
-  { key: 'sizeMm', label: '尺寸' },
-  { key: 'unitCostCents', label: '單顆成本' },
-  { key: 'stockQty', label: '庫存' },
-  { key: 'reorderPoint', label: '安全庫存' },
-  { key: 'stockValue', label: '庫存值' },
-  { key: 'supplierName', label: '供應商' },
-] as const
-type ColKey = (typeof HIDEABLE)[number]['key']
+/**
+ * 欄位定義。寬度可拖曳調整、可隱藏，都記在瀏覽器。
+ * 圖與名稱標為 required——那是辨認珠子的依據，藏了就沒得看。
+ */
+const COLUMNS: Column[] = [
+  { key: 'image', label: '圖', width: 70, required: true },
+  { key: 'name', label: '名稱', width: 180, required: true },
+  { key: 'sourceSpec', label: '淘寶原文', width: 200 },
+  { key: 'category', label: '分類', width: 90 },
+  { key: 'sizeMm', label: '尺寸', width: 80, align: 'right' },
+  { key: 'unitCostCents', label: '單顆成本', width: 100, align: 'right' },
+  { key: 'stockQty', label: '庫存', width: 80, align: 'right' },
+  { key: 'reorderPoint', label: '安全庫存', width: 90, align: 'right' },
+  { key: 'stockValue', label: '庫存值', width: 90, align: 'right' },
+  { key: 'supplierName', label: '供應商', width: 140 },
+]
 const UNCATEGORIZED = '（未分類）'
 const NO_SUPPLIER = '（無供應商）'
 
@@ -68,8 +78,8 @@ export default function BeadsTable({
 
   const [sortKey, setSortKey] = useState<SortKey>('name')
   const [sortAsc, setSortAsc] = useState(true)
-  const [hidden, setHidden] = useState<Set<ColKey>>(new Set())
-  const [colsOpen, setColsOpen] = useState(false)
+  const { widths, persist, reset } = useColumnWidths('beads', COLUMNS)
+  const { hidden, toggle, visible } = useColumnVisibility('beads', COLUMNS)
 
   // localStorage 可能被停用（無痕視窗、封鎖網站資料）
   useEffect(() => {
@@ -82,19 +92,6 @@ export default function BeadsTable({
   }, [])
 
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(COLS_KEY)
-      if (raw) {
-        const keys = JSON.parse(raw) as string[]
-        const valid = HIDEABLE.map((c) => c.key) as readonly string[]
-        setHidden(new Set(keys.filter((k): k is ColKey => valid.includes(k))))
-      }
-    } catch {
-      /* 讀不到就全部顯示 */
-    }
-  }, [])
-
-  useEffect(() => {
     document.documentElement.style.setProperty('--bead-img', size === 'lg' ? '150px' : '44px')
     try {
       localStorage.setItem(SIZE_KEY, size)
@@ -103,21 +100,7 @@ export default function BeadsTable({
     }
   }, [size])
 
-  function toggleCol(k: ColKey) {
-    setHidden((prev) => {
-      const next = new Set(prev)
-      if (next.has(k)) next.delete(k)
-      else next.add(k)
-      try {
-        localStorage.setItem(COLS_KEY, JSON.stringify([...next]))
-      } catch {
-        /* 存不進去不影響本次操作 */
-      }
-      return next
-    })
-  }
-
-  const show = (k: ColKey) => !hidden.has(k)
+  const show = (k: string) => !hidden.has(k)
 
   const supplierOptions = useMemo(
     () => [...new Set(beads.map((b) => b.supplierName ?? NO_SUPPLIER))].sort(),
@@ -226,31 +209,6 @@ export default function BeadsTable({
     }
   }
 
-  /** 可排序的表頭 */
-  function SortTh({
-    k,
-    children,
-    align = 'left',
-  }: {
-    k: SortKey
-    children: React.ReactNode
-    align?: 'left' | 'right'
-  }) {
-    const on = sortKey === k
-    return (
-      <Th align={align}>
-        <button
-          type="button"
-          onClick={() => sortBy(k)}
-          className={`${align === 'right' ? 'text-right' : 'text-left'} hover:text-ink ${on ? 'text-ink' : ''}`}
-        >
-          {children}
-          <span className="ml-1 text-[10px]">{on ? (sortAsc ? '▲' : '▼') : '↕'}</span>
-        </button>
-      </Th>
-    )
-  }
-
   /** 數值範圍輸入 */
   function RangeInput({
     value,
@@ -334,39 +292,8 @@ export default function BeadsTable({
             </button>
           )}
 
-          <div className="relative ml-auto flex items-center gap-4 text-[13px]">
-            <button
-              type="button"
-              onClick={() => setColsOpen((v) => !v)}
-              className="border border-hairline px-3 py-1 text-ink-soft transition hover:border-accent hover:text-ink"
-            >
-              欄位{hidden.size > 0 && `（隱藏 ${hidden.size}）`}
-            </button>
-
-            {colsOpen && (
-              <>
-                {/* 點空白處收起來 */}
-                <div className="fixed inset-0 z-20" onClick={() => setColsOpen(false)} />
-                <div className="absolute right-0 top-8 z-30 w-44 border border-hairline bg-paper py-1 shadow-sm">
-                  {HIDEABLE.map((c) => (
-                    <label
-                      key={c.key}
-                      className="flex cursor-pointer items-center gap-2 px-3 py-1.5 hover:bg-sunk"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={show(c.key)}
-                        onChange={() => toggleCol(c.key)}
-                      />
-                      <span className="text-ink">{c.label}</span>
-                    </label>
-                  ))}
-                  <p className="border-t border-hairline px-3 pt-1.5 text-[11px] text-ink-soft">
-                    圖與名稱固定顯示
-                  </p>
-                </div>
-              </>
-            )}
+          <div className="ml-auto flex items-center gap-4 text-[13px]">
+            <ColumnToggles columns={COLUMNS} hidden={hidden} onToggle={toggle} />
 
             <span className="text-ink-soft">圖片</span>
             <div className="flex border border-hairline">
@@ -470,90 +397,154 @@ export default function BeadsTable({
           </button>
         </div>
       ) : (
-        <Table>
-          <thead>
-            <tr>
-              <Th>圖</Th>
-              <SortTh k="name">名稱</SortTh>
-              {show('sourceSpec') && <SortTh k="sourceSpec">淘寶原文</SortTh>}
-              {show('category') && <SortTh k="category">分類</SortTh>}
-              {show('sizeMm') && <SortTh k="sizeMm" align="right">尺寸</SortTh>}
-              {show('unitCostCents') && <SortTh k="unitCostCents" align="right">單顆成本</SortTh>}
-              {show('stockQty') && <SortTh k="stockQty" align="right">庫存</SortTh>}
-              {show('reorderPoint') && <SortTh k="reorderPoint" align="right">安全庫存</SortTh>}
-              {show('stockValue') && <SortTh k="stockValue" align="right">庫存值</SortTh>}
-              {show('supplierName') && <SortTh k="supplierName">供應商</SortTh>}
-            </tr>
-          </thead>
-          <tbody>
-            {pageRows.map((b) => {
-              const isLow = b.reorderPoint > 0 && b.stockQty <= b.reorderPoint
-              return (
-                <tr key={b.id}>
-                  <Td>
-                    <BeadImageCell beadId={b.id} name={b.name} initialUrl={b.imageUrl} />
-                  </Td>
-                  <Td>
-                    <EditableCell beadId={b.id} field="name" value={b.name} />
-                  </Td>
-                  {show('sourceSpec') && (
-                    <Td>
-                      {/* 滑過看完整商品名；規格是對照 Excel 最快的線索 */}
-                      <span
-                        title={b.sourceTitle ?? undefined}
-                        className="block max-w-[14rem] truncate text-ink-soft"
-                      >
-                        {b.sourceSpec ?? '—'}
-                      </span>
-                    </Td>
-                  )}
-                  {show('category') && (
-                    <Td>
-                      <EditableCell
-                        beadId={b.id}
-                        field="category"
-                        value={b.category}
-                        options={categories}
-                        placeholder="未分類"
+        <div className="overflow-x-auto">
+          {/* table-fixed 才吃得到 colgroup 的寬度 */}
+          <table className="border-collapse text-[13px]" style={{ tableLayout: 'fixed' }}>
+            <colgroup>
+              {visible.map((c) => (
+                <col key={c.key} style={{ width: widths[c.key] }} />
+              ))}
+            </colgroup>
+            <thead>
+              <tr>
+                {visible.map((c) => {
+                  const sortable = c.key !== 'image'
+                  const on = sortKey === (c.key as SortKey)
+                  return (
+                    <th
+                      key={c.key}
+                      className={`relative border-b border-hairline pb-2.5 pr-3 font-normal text-ink-soft ${
+                        c.align === 'right' ? 'text-right' : 'text-left'
+                      }`}
+                    >
+                      {sortable ? (
+                        <button
+                          type="button"
+                          onClick={() => sortBy(c.key as SortKey)}
+                          className={`max-w-full truncate hover:text-ink ${on ? 'text-ink' : ''}`}
+                        >
+                          {c.label}
+                          <span className="ml-1 text-[10px]">
+                            {on ? (sortAsc ? '▲' : '▼') : '↕'}
+                          </span>
+                        </button>
+                      ) : (
+                        <span className="block truncate">{c.label}</span>
+                      )}
+                      <ColumnResizer
+                        onDrag={(dx) =>
+                          persist({
+                            ...widths,
+                            [c.key]: Math.max(c.minWidth ?? 60, (widths[c.key] ?? c.width) + dx),
+                          })
+                        }
+                        onReset={() => reset(c.key)}
                       />
-                    </Td>
-                  )}
-                  {show('sizeMm') && (
-                    <Td align="right" numeric>
-                      <EditableCell beadId={b.id} field="sizeMm" value={b.sizeMm} align="right" />
-                    </Td>
-                  )}
-                  {show('unitCostCents') && (
-                    <Td align="right" numeric>
-                      <Money cents={b.unitCostCents} showCents />
-                    </Td>
-                  )}
-                  {show('stockQty') && (
-                    <Td align="right" numeric>
-                      <StockCell beadId={b.id} stockQty={b.stockQty} isLow={isLow} />
-                    </Td>
-                  )}
-                  {show('reorderPoint') && (
-                    <Td align="right" numeric>
-                      <EditableCell
-                        beadId={b.id}
-                        field="reorderPoint"
-                        value={b.reorderPoint || null}
-                        align="right"
-                      />
-                    </Td>
-                  )}
-                  {show('stockValue') && (
-                    <Td align="right" numeric>
-                      <Money cents={b.stockQty * b.unitCostCents} />
-                    </Td>
-                  )}
-                  {show('supplierName') && <Td>{b.supplierName ?? '—'}</Td>}
-                </tr>
-              )
-            })}
-          </tbody>
-        </Table>
+                    </th>
+                  )
+                })}
+              </tr>
+            </thead>
+            <tbody>
+              {pageRows.map((b) => {
+                const isLow = b.reorderPoint > 0 && b.stockQty <= b.reorderPoint
+                return (
+                  <tr key={b.id}>
+                    {visible.map((c) => {
+                      const cls = `border-b border-hairline py-2.5 pr-3 align-middle ${
+                        c.align === 'right' ? 'text-right tnum' : 'text-left'
+                      }`
+                      switch (c.key) {
+                        case 'image':
+                          return (
+                            <td key={c.key} className={cls}>
+                              <BeadImageCell beadId={b.id} name={b.name} initialUrl={b.imageUrl} />
+                            </td>
+                          )
+                        case 'name':
+                          return (
+                            <td key={c.key} className={cls}>
+                              <EditableCell beadId={b.id} field="name" value={b.name} />
+                            </td>
+                          )
+                        case 'sourceSpec':
+                          return (
+                            <td key={c.key} className={cls}>
+                              {/* 滑過看完整商品名；規格是對照 Excel 最快的線索 */}
+                              <span
+                                title={b.sourceTitle ?? undefined}
+                                className="block truncate text-ink-soft"
+                              >
+                                {b.sourceSpec ?? '—'}
+                              </span>
+                            </td>
+                          )
+                        case 'category':
+                          return (
+                            <td key={c.key} className={cls}>
+                              <EditableCell
+                                beadId={b.id}
+                                field="category"
+                                value={b.category}
+                                options={categories}
+                                placeholder="未分類"
+                              />
+                            </td>
+                          )
+                        case 'sizeMm':
+                          return (
+                            <td key={c.key} className={cls}>
+                              <EditableCell
+                                beadId={b.id}
+                                field="sizeMm"
+                                value={b.sizeMm}
+                                align="right"
+                              />
+                            </td>
+                          )
+                        case 'unitCostCents':
+                          return (
+                            <td key={c.key} className={cls}>
+                              <Money cents={b.unitCostCents} showCents />
+                            </td>
+                          )
+                        case 'stockQty':
+                          return (
+                            <td key={c.key} className={cls}>
+                              <StockCell beadId={b.id} stockQty={b.stockQty} isLow={isLow} />
+                            </td>
+                          )
+                        case 'reorderPoint':
+                          return (
+                            <td key={c.key} className={cls}>
+                              <EditableCell
+                                beadId={b.id}
+                                field="reorderPoint"
+                                value={b.reorderPoint || null}
+                                align="right"
+                              />
+                            </td>
+                          )
+                        case 'stockValue':
+                          return (
+                            <td key={c.key} className={cls}>
+                              <Money cents={b.stockQty * b.unitCostCents} />
+                            </td>
+                          )
+                        default:
+                          return (
+                            <td key={c.key} className={cls}>
+                              <span className="block truncate">{b.supplierName ?? '—'}</span>
+                            </td>
+                          )
+                      }
+                    })}
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
       )}
 
       {rows.length > 0 && (
