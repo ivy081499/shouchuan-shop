@@ -32,14 +32,15 @@ export interface BeadRow {
 const SIZE_KEY = 'beads.imageSize'
 
 /**
- * 欄位定義。寬度可拖曳調整、可隱藏，都記在瀏覽器。
- * 圖與名稱標為 required——那是辨認珠子的依據，藏了就沒得看。
+ * 欄位定義。寬度可拖曳調整、每一欄都可隱藏，都記在瀏覽器。
+ * 不鎖任何欄位——哪些欄有用是店主自己決定的；
+ * 只在 useColumnVisibility 擋下「全部隱藏」，避免表格變空白。
  */
 const COLUMNS: Column[] = [
-  { key: 'image', label: '圖', width: 70, required: true },
+  { key: 'image', label: '圖', width: 70 },
   // 淘寶原始資料擺前面——這是店主下貨時看到的東西，對照進貨單就靠它
-  { key: 'sourceTitle', label: '商品名稱（原始）', width: 260, required: true },
-  { key: 'sourceSpec', label: '型號款式（原始）', width: 200, required: true },
+  { key: 'sourceTitle', label: '商品名稱（原始）', width: 260 },
+  { key: 'sourceSpec', label: '型號款式（原始）', width: 200 },
   { key: 'name', label: '簡稱', width: 190 },
   { key: 'category', label: '分類', width: 90 },
   { key: 'sizeMm', label: '尺寸', width: 80, align: 'right' },

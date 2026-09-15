@@ -78,10 +78,15 @@ export function useColumnVisibility(storageKey: string, columns: Column[]) {
   const toggle = useCallback(
     (key: string) => {
       const col = columns.find((c) => c.key === key)
-      if (col?.required) return // 必填欄位不可隱藏
+      if (col?.required) return // 標為 required 的欄位不可隱藏
       setHidden((prev) => {
         const next = new Set(prev)
-        next.has(key) ? next.delete(key) : next.add(key)
+        if (next.has(key)) next.delete(key)
+        else {
+          // 擋下「全部隱藏」——表格會整個空白，看起來像壞了
+          if (next.size >= columns.length - 1) return prev
+          next.add(key)
+        }
         try {
           localStorage.setItem(`colv:${storageKey}`, JSON.stringify([...next]))
         } catch {
