@@ -36,8 +36,10 @@ const SIZE_KEY = 'beads.imageSize'
  */
 const COLUMNS: Column[] = [
   { key: 'image', label: '圖', width: 70, required: true },
-  { key: 'name', label: '名稱', width: 180, required: true },
-  { key: 'sourceSpec', label: '淘寶原文', width: 200 },
+  // 淘寶原始資料擺前面——這是店主下貨時看到的東西，對照進貨單就靠它
+  { key: 'sourceTitle', label: '商品名稱（原始）', width: 260, required: true },
+  { key: 'sourceSpec', label: '型號款式（原始）', width: 200, required: true },
+  { key: 'name', label: '簡稱', width: 190 },
   { key: 'category', label: '分類', width: 90 },
   { key: 'sizeMm', label: '尺寸', width: 80, align: 'right' },
   { key: 'unitCostCents', label: '單顆成本', width: 100, align: 'right' },
@@ -49,7 +51,7 @@ const COLUMNS: Column[] = [
 const UNCATEGORIZED = '（未分類）'
 const NO_SUPPLIER = '（無供應商）'
 
-type SortKey = 'name' | 'sourceSpec' | 'category' | 'sizeMm' | 'unitCostCents' | 'stockQty' | 'reorderPoint' | 'stockValue' | 'supplierName'
+type SortKey = 'name' | 'sourceTitle' | 'sourceSpec' | 'category' | 'sizeMm' | 'unitCostCents' | 'stockQty' | 'reorderPoint' | 'stockValue' | 'supplierName'
 type NumField = 'sizeMm' | 'unitCostCents' | 'stockQty' | 'reorderPoint'
 
 /** 數值欄的範圍條件，空字串代表不限 */
@@ -328,7 +330,7 @@ export default function BeadsTable({
               type="search"
               value={fName}
               onChange={(e) => setFName(e.target.value)}
-              placeholder="中文名或淘寶原文皆可"
+              placeholder="原始商品名、款式或簡稱"
               className="mt-1 w-full border-b border-hairline bg-transparent py-1 text-[13px] focus:border-accent focus:outline-none"
             />
           </label>
@@ -464,17 +466,27 @@ export default function BeadsTable({
                         case 'name':
                           return (
                             <td key={c.key} className={cls}>
-                              <EditableCell beadId={b.id} field="name" value={b.name} />
+                              <EditableCell
+                                beadId={b.id}
+                                field="name"
+                                value={b.name}
+                                placeholder="未命名"
+                              />
+                            </td>
+                          )
+                        case 'sourceTitle':
+                          return (
+                            <td key={c.key} className={cls}>
+                              {/* 淘寶原文照登，不改字不簡化——滑過看完整內容 */}
+                              <span title={b.sourceTitle ?? undefined} className="block truncate">
+                                {b.sourceTitle ?? '—'}
+                              </span>
                             </td>
                           )
                         case 'sourceSpec':
                           return (
                             <td key={c.key} className={cls}>
-                              {/* 滑過看完整商品名；規格是對照 Excel 最快的線索 */}
-                              <span
-                                title={b.sourceTitle ?? undefined}
-                                className="block truncate text-ink-soft"
-                              >
+                              <span title={b.sourceSpec ?? undefined} className="block truncate">
                                 {b.sourceSpec ?? '—'}
                               </span>
                             </td>

@@ -165,8 +165,8 @@ export default function EditableCell({
           setTouched(false)
           setEditing(true)
         }}
-        title="點一下可修改"
-        className={`w-full ${alignCls} ${
+        title={`${display}　（點一下可修改）`}
+        className={`block w-full truncate ${alignCls} ${
           shown === null || shown === '' ? 'text-ink-soft' : 'text-ink'
         } underline decoration-hairline decoration-dotted underline-offset-4 hover:decoration-accent`}
       >
