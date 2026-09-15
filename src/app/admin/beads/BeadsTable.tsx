@@ -26,6 +26,7 @@ export interface BeadRow {
   /** 淘寶原始商品名與規格，供對照匯出的 Excel */
   sourceTitle: string | null
   sourceSpec: string | null
+  sourceUrl: string | null
 }
 
 const SIZE_KEY = 'beads.imageSize'
@@ -47,6 +48,7 @@ const COLUMNS: Column[] = [
   { key: 'reorderPoint', label: '安全庫存', width: 90, align: 'right' },
   { key: 'stockValue', label: '庫存值', width: 90, align: 'right' },
   { key: 'supplierName', label: '供應商', width: 140 },
+  { key: 'sourceUrl', label: '商品連結', width: 90 },
 ]
 const UNCATEGORIZED = '（未分類）'
 const NO_SUPPLIER = '（無供應商）'
@@ -103,6 +105,43 @@ export default function BeadsTable({
   }, [size])
 
   const show = (k: string) => !hidden.has(k)
+
+  /**
+   * 會被截斷的文字格。
+   * 自繪 tooltip 而非用 title——原生 tooltip 要停留約一秒才出現，有時根本不觸發。
+   */
+  /**
+   * 會被截斷的文字格，滑過顯示完整內容。
+   *
+   * tooltip 用 position:fixed 並在 hover 時才量座標——
+   * 表格外層有 overflow-x-auto，absolute 定位的 tooltip 會被裁掉。
+   */
+  function Truncated({ text }: { text: string | null }) {
+    const [pos, setPos] = useState<{ x: number; y: number } | null>(null)
+    if (!text) return <span className="text-ink-soft">—</span>
+    return (
+      <>
+        <span
+          onMouseEnter={(e) => {
+            const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+            setPos({ x: r.left, y: r.bottom + 4 })
+          }}
+          onMouseLeave={() => setPos(null)}
+          className="block truncate"
+        >
+          {text}
+        </span>
+        {pos && (
+          <span
+            style={{ left: pos.x, top: pos.y }}
+            className="pointer-events-none fixed z-50 w-max max-w-md whitespace-normal break-words bg-ink px-3 py-2 text-left text-[12px] leading-relaxed text-paper shadow-lg"
+          >
+            {text}
+          </span>
+        )}
+      </>
+    )
+  }
 
   const supplierOptions = useMemo(
     () => [...new Set(beads.map((b) => b.supplierName ?? NO_SUPPLIER))].sort(),
@@ -400,8 +439,17 @@ export default function BeadsTable({
         </div>
       ) : (
         <div className="overflow-x-auto">
-          {/* table-fixed 才吃得到 colgroup 的寬度 */}
-          <table className="border-collapse text-[13px]" style={{ tableLayout: 'fixed' }}>
+          {/*
+            table-fixed 才吃得到 colgroup 的寬度；
+            且必須明確給總寬，否則瀏覽器會把欄位壓縮到容器內，拖曳就看不出效果。
+          */}
+          <table
+            className="border-collapse text-[13px]"
+            style={{
+              tableLayout: 'fixed',
+              width: visible.reduce((sum, c) => sum + (widths[c.key] ?? c.width), 0),
+            }}
+          >
             <colgroup>
               {visible.map((c) => (
                 <col key={c.key} style={{ width: widths[c.key] }} />
@@ -437,7 +485,10 @@ export default function BeadsTable({
                         onDrag={(dx) =>
                           persist({
                             ...widths,
-                            [c.key]: Math.max(c.minWidth ?? 60, (widths[c.key] ?? c.width) + dx),
+                            // 取整數，否則多次微調會累積成 225.71875 這種值
+                            [c.key]: Math.round(
+                              Math.max(c.minWidth ?? 60, (widths[c.key] ?? c.width) + dx),
+                            ),
                           })
                         }
                         onReset={() => reset(c.key)}
@@ -478,17 +529,13 @@ export default function BeadsTable({
                           return (
                             <td key={c.key} className={cls}>
                               {/* 淘寶原文照登，不改字不簡化——滑過看完整內容 */}
-                              <span title={b.sourceTitle ?? undefined} className="block truncate">
-                                {b.sourceTitle ?? '—'}
-                              </span>
+                              <Truncated text={b.sourceTitle} />
                             </td>
                           )
                         case 'sourceSpec':
                           return (
                             <td key={c.key} className={cls}>
-                              <span title={b.sourceSpec ?? undefined} className="block truncate">
-                                {b.sourceSpec ?? '—'}
-                              </span>
+                              <Truncated text={b.sourceSpec} />
                             </td>
                           )
                         case 'category':
@@ -540,13 +587,32 @@ export default function BeadsTable({
                         case 'stockValue':
                           return (
                             <td key={c.key} className={cls}>
-                              <Money cents={b.stockQty * b.unitCostCents} />
+                              {/* 顯示到分——不然 5 × $11.85 會顯示成 $59 而不是 $59.25 */}
+                              <Money cents={b.stockQty * b.unitCostCents} showCents />
+                            </td>
+                          )
+                        case 'sourceUrl':
+                          return (
+                            <td key={c.key} className={cls}>
+                              {b.sourceUrl ? (
+                                <a
+                                  href={b.sourceUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  title={b.sourceUrl}
+                                  className="text-accent underline underline-offset-4 hover:text-ink"
+                                >
+                                  看商品
+                                </a>
+                              ) : (
+                                <span className="text-ink-soft">—</span>
+                              )}
                             </td>
                           )
                         default:
                           return (
                             <td key={c.key} className={cls}>
-                              <span className="block truncate">{b.supplierName ?? '—'}</span>
+                              <Truncated text={b.supplierName} />
                             </td>
                           )
                       }

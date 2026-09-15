@@ -46,6 +46,7 @@ export default async function InventoryPage() {
           supplierName: b.supplierName,
           sourceTitle: b.sourceTitle,
           sourceSpec: b.sourceSpec,
+          sourceUrl: b.sourceUrl,
         }))}
       />
     )
@@ -71,7 +72,7 @@ export default async function InventoryPage() {
         />
         <Stat
           label="進貨總額"
-          value={<Money cents={totals.twdCents} />}
+          value={<Money cents={totals.twdCents} showCents />}
           sub={formatCNY(totals.cnyCents)}
           hint={`${totals.batches} 批進貨`}
           explain="所有已確認進貨單的金額加總（含運費）。人民幣直接相加；台幣用每批進貨當時的匯率各自換算後相加，因為每批匯率可能不同。這是「總共花了多少錢叫貨」，不會因為珠子用掉而減少。"
