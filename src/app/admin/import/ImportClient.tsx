@@ -5,7 +5,7 @@ import { parseUpload, confirmImport, type ConfirmRow } from './actions.ts'
 import type { ParsedPurchaseRow } from '@/lib/xlsx-import'
 import { formatTWD, formatCNY } from '@/lib/money'
 import { calcPurchaseCosts } from '@/lib/costing'
-import { useColumnWidths, ColumnResizer, type Column } from '@/ui/ResizableTable.tsx'
+import { useColumnWidths, useColumnVisibility, ColumnResizer, ColumnToggles, type Column } from '@/ui/ResizableTable'
 
 const CONFIDENCE_LABEL: Record<string, string> = {
   parsed: '已解析',
