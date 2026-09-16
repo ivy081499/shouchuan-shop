@@ -16,7 +16,8 @@ export type SupplierInput = z.infer<typeof supplierInputSchema>
 /* ── 珠子 ── */
 export const beadInputSchema = z.object({
   name: z.string().trim().min(1, '請填寫珠子名稱').max(100),
-  category: z.string().trim().max(50).optional(),
+  /** null = 未分類。清空時存 null 而非空字串，避免篩選器多出空白項 */
+  category: z.string().trim().max(50).nullable().optional(),
   sizeMm: z.number().positive('尺寸必須大於 0').max(100).nullable().optional(),
   colorHex: z
     .string()
@@ -54,8 +55,8 @@ export const importRowSchema = z.object({
   /** 人民幣分 */
   unitPriceCnyCents: z.number().int().min(0),
   quantity: z.number().int().min(1),
-  /** 解析建議值，可能為 null */
-  beadsPerUnit: z.number().int().min(1).nullable(),
+  /** 解析建議值；判讀不出時為預設值 1（ADR-0006 修訂 2026-09-14） */
+  beadsPerUnit: z.number().int().min(1),
   countSource: z.enum(['parsed', 'estimated', 'manual']),
   parseReason: z.string(),
 })
@@ -63,7 +64,9 @@ export type ImportRow = z.infer<typeof importRowSchema>
 
 /**
  * 店主確認後送出的一列。
- * beadsPerUnit 在此為【必填】—— 這是「必須人工確認」規則的強制點。
+ * beadsPerUnit 在此為【必填】且 ≥ 1。
+ * 顆數的人工確認在雲端試算表完成（ADR-0006 修訂 2026-09-14）——
+ * 交給這個 schema 的資料必須是店主已在試算表確認過顆數的版本。
  */
 export const confirmedImportRowSchema = z.object({
   rawTitle: z.string(),

@@ -12,6 +12,7 @@ export interface BeadOption {
   unitCostCents: number
   stockQty: number
   category: string | null
+  imageUrl: string | null
 }
 
 interface Line {
@@ -37,6 +38,19 @@ export default function RecipeEditor({
   const [lines, setLines] = useState<Line[]>(initialLines)
   const [price, setPrice] = useState(String(priceCents / 100))
   const [currentStatus, setCurrentStatus] = useState(status)
+
+  /**
+   * 上次儲存的內容，供「重設」還原。
+   * 儲存成功後要跟著更新——否則按重設會跳回剛進頁面時的狀態，而不是最後存檔的那次。
+   * 第一次設定配方時 initialLines 為空陣列，重設等於清空。
+   */
+  const [saved, setSaved] = useState({
+    lines: initialLines,
+    price: String(priceCents / 100),
+    status,
+  })
+  const [query, setQuery] = useState('')
+  const [zoom, setZoom] = useState<{ url: string; name: string } | null>(null)
   const [msg, setMsg] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
@@ -74,6 +88,26 @@ export default function RecipeEditor({
     setLines((ls) => ls.map((l) => (l.beadId === beadId ? { ...l, qty: Math.max(1, qty) } : l)))
   }
 
+  /** 還原到上次儲存的內容；沒存過就是全空 */
+  function reset() {
+    setLines(saved.lines)
+    setPrice(saved.price)
+    setCurrentStatus(saved.status)
+    setError(null)
+    setMsg(null)
+    setZoom(null)
+  }
+
+  /** 有沒有未儲存的改動——沒有就不必顯示重設按鈕 */
+  const dirty =
+    price !== saved.price ||
+    currentStatus !== saved.status ||
+    lines.length !== saved.lines.length ||
+    lines.some((l) => {
+      const s = saved.lines.find((x) => x.beadId === l.beadId)
+      return !s || s.qty !== l.qty
+    })
+
   function save() {
     setError(null)
     setMsg(null)
@@ -94,11 +128,27 @@ export default function RecipeEditor({
         setError(r2.error)
         return
       }
+      setSaved({ lines, price, status: currentStatus })
       setMsg('已儲存')
     })
   }
 
-  const categories = [...new Set(beads.map((b) => b.category ?? '未分類'))].sort()
+  /**
+   * 搜尋過濾。已勾選的珠子一律保留——否則搜尋時會從畫面消失，
+   * 讓人以為配方被清掉了。
+   */
+  const q = query.trim().toLowerCase()
+  const visibleBeads = q
+    ? beads.filter(
+        (b) =>
+          used.has(b.id) ||
+          b.name.toLowerCase().includes(q) ||
+          (b.sizeMm !== null && String(b.sizeMm).includes(q)) ||
+          (b.category ?? '').toLowerCase().includes(q),
+      )
+    : beads
+
+  const categories = [...new Set(visibleBeads.map((b) => b.category ?? '未分類'))].sort()
 
   return (
     <>
@@ -161,20 +211,60 @@ export default function RecipeEditor({
         >
           {pending ? '儲存中…' : '儲存配方'}
         </button>
+        <button
+          onClick={reset}
+          disabled={pending || !dirty}
+          title={
+            saved.lines.length === 0
+              ? '還沒存過配方，重設會清空目前的勾選'
+              : '回到上次儲存的內容'
+          }
+          className="border border-hairline px-5 py-2.5 text-[13px] tracking-wider text-ink hover:border-accent disabled:opacity-40"
+        >
+          重設
+        </button>
+        {dirty && <span className="text-[12px] text-ink-soft">有未儲存的改動</span>}
       </div>
 
       <p className="mb-3 text-[13px] text-ink-soft">
         勾選這條手串用到的珠子，填上各用幾顆。上方成本與毛利會即時重算。
+        庫存 0 的照樣可以勾——先把配方排好，缺的貨再去補。
       </p>
+
+      <div className="mb-4 flex flex-wrap items-center gap-4">
+        <input
+          type="search"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="搜尋珠子名稱、尺寸或分類…"
+          className="w-full max-w-xs border-b border-hairline bg-transparent py-1.5 text-[13px] focus:border-accent focus:outline-none"
+        />
+        <span className="text-[12px] text-ink-soft">
+          {q ? `符合 ${visibleBeads.length} 種` : `共 ${beads.length} 種`}
+          {lines.length > 0 && `，已選 ${lines.length} 種`}
+        </span>
+        {q && (
+          <button
+            onClick={() => setQuery('')}
+            className="text-[12px] text-ink-soft underline hover:text-ink"
+          >
+            清除搜尋
+          </button>
+        )}
+      </div>
 
       {beads.length === 0 ? (
         <div className="border border-dashed border-hairline px-8 py-12 text-center text-[13px] text-ink-soft">
           還沒有珠子可選。先到「進貨」匯入淘寶訂單。
         </div>
+      ) : visibleBeads.length === 0 ? (
+        <div className="border border-dashed border-hairline px-8 py-12 text-center text-[13px] text-ink-soft">
+          找不到符合「{query}」的珠子。
+        </div>
       ) : (
         <div className="space-y-8">
           {categories.map((cat) => {
-            const group = beads.filter((b) => (b.category ?? '未分類') === cat)
+            const group = visibleBeads.filter((b) => (b.category ?? '未分類') === cat)
             if (group.length === 0) return null
             return (
               <section key={cat}>
@@ -187,7 +277,22 @@ export default function RecipeEditor({
                     const checked = used.has(b.id)
                     return (
                       <li key={b.id} className="flex flex-wrap items-center gap-4 py-2.5 text-[13px]">
-                        <label className="flex flex-1 min-w-[220px] cursor-pointer items-center gap-3">
+                        {/* 縮圖不能放在 label 內，否則點圖會變成勾選 */}
+                        {b.imageUrl ? (
+                          <button
+                            type="button"
+                            onClick={() => setZoom({ url: b.imageUrl as string, name: b.name })}
+                            title="點開看大圖"
+                            className="h-9 w-9 shrink-0 overflow-hidden border border-hairline transition hover:border-accent"
+                          >
+                            {/* 圖片來源含外部網址（淘寶），next/image 需設定網域，故用原生 img */}
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={b.imageUrl} alt={b.name} className="h-full w-full object-cover" />
+                          </button>
+                        ) : (
+                          <span className="h-9 w-9 shrink-0 border border-hairline bg-sunk" />
+                        )}
+                        <label className="flex flex-1 min-w-[200px] cursor-pointer items-center gap-3">
                           <input type="checkbox" checked={checked} onChange={() => toggle(b.id)} />
                           <span>{b.name}</span>
                           {b.sizeMm && <span className="tnum text-ink-soft">{b.sizeMm}mm</span>}
@@ -221,6 +326,34 @@ export default function RecipeEditor({
               </section>
             )
           })}
+        </div>
+      )}
+
+      {zoom && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={`${zoom.name} 的圖片`}
+          onClick={() => setZoom(null)}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-ink/80 p-6"
+        >
+          <div onClick={(e) => e.stopPropagation()} className="w-full max-w-2xl bg-paper p-5">
+            <div className="mb-3 flex items-baseline justify-between gap-4">
+              <h2 className="font-serif text-lg text-ink">{zoom.name}</h2>
+              <button
+                type="button"
+                onClick={() => setZoom(null)}
+                className="text-[13px] text-ink-soft hover:text-ink"
+              >
+                關閉 ✕
+              </button>
+            </div>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={zoom.url} alt={zoom.name} className="max-h-[65vh] w-full bg-sunk object-contain" />
+            <p className="mt-3 text-[12px] text-ink-soft">
+              要換圖請到「珠子」頁面。
+            </p>
+          </div>
         </div>
       )}
     </>

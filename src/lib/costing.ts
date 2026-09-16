@@ -72,6 +72,30 @@ export function calcPurchaseCosts(
   })
 }
 
+/**
+ * 重複進貨時的新單顆成本（移動加權平均）。
+ *
+ * 公式：(現有庫存 × 現有成本 + 本次進貨總額) ÷ (現有庫存 + 本次顆數)
+ *
+ * 為什麼不直接覆蓋成最新價：覆蓋會讓庫存值偏離實際花費。
+ * 例：現有 5 顆 @ $22.79，新進 5 顆 @ $30.00。
+ *   覆蓋 → 10 顆全算 $30.00，庫存值 $300.00
+ *   平均 → 10 顆算 $26.39，庫存值 $263.95 ＝ 實際花費
+ *
+ * 現有庫存為 0 時（全部用完後再進貨）直接採用新成本。
+ */
+export function calcMovingAverageCost(
+  currentQty: number,
+  currentUnitCostCents: Cents,
+  incomingQty: number,
+  incomingLineTotalCents: Cents,
+): Cents {
+  if (incomingQty <= 0) return currentUnitCostCents
+  if (currentQty <= 0) return Math.round(incomingLineTotalCents / incomingQty)
+  const totalValue = currentQty * currentUnitCostCents + incomingLineTotalCents
+  return Math.round(totalValue / (currentQty + incomingQty))
+}
+
 /* ────────────────────────────────────────────────────────────
    關稅攤提（整批）
 

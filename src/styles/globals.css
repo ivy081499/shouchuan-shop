@@ -20,6 +20,11 @@
   --font-sans: "Noto Sans TC", "PingFang TC", system-ui, sans-serif;
 }
 
+/* 珠子列表縮圖邊長，由列表上的「小／大」切換改寫（見 ImageSizeToggle） */
+:root {
+  --bead-img: 44px;
+}
+
 html, body {
   background: var(--color-paper);
   color: var(--color-ink);

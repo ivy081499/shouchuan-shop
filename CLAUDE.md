@@ -47,7 +47,7 @@ mkdir -p .data && cp ../../../.data/local.sqlite .data/local.sqlite
 ```
 
 現行資料庫 `~/Desktop/手串/.data/local.sqlite`，**進貨作業絕不可直接寫它**。
-驗證無誤、店主確認後才合併。詳見 `docs/decisions/ADR-0010`。
+驗證無誤、店主確認後才合併。詳見 `docs/decisions/ADR-0011`。
 
 **關稅**：一批貨清關一次收一筆，掛在 `shipments` 表，
 用 `calcShipmentCosts()` 跨訂單攤提（不是 `calcPurchaseCosts()`）。

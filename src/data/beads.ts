@@ -5,8 +5,9 @@
 
 import { eq, and, inArray, asc, desc, sql, like, or } from 'drizzle-orm'
 import type { Db } from './db.ts'
-import { beads, suppliers, stockLedger, recipes } from '@db/schema'
+import { beads, suppliers, stockLedger, recipes, purchases, purchaseItems } from '@db/schema'
 import type { BeadInput, SupplierInput } from '@/contracts/bead'
+import { cnyToTwd } from '@/lib/money'
 
 /* ────────────────────────────────────────────────────────────
    供應商
@@ -76,9 +77,11 @@ export async function listBeads(db: Db, filter: BeadFilter = {}) {
       category: beads.category,
       sizeMm: beads.sizeMm,
       colorHex: beads.colorHex,
+      imageUrl: beads.imageUrl,
       supplierId: beads.supplierId,
       supplierName: suppliers.name,
       sourceUrl: beads.sourceUrl,
+      sourceTitle: beads.sourceTitle,
       sourceSpec: beads.sourceSpec,
       unitCostCents: beads.unitCostCents,
       stockQty: beads.stockQty,
@@ -197,4 +200,47 @@ export async function listCategories(db: Db): Promise<string[]> {
     .from(beads)
     .where(and(eq(beads.isArchived, false), sql`${beads.category} IS NOT NULL`))
   return rows.map((r) => r.category).filter((c): c is string => c !== null).sort()
+}
+
+/**
+ * 設定珠子圖片。
+ * url 為 null 代表清除圖片。
+ */
+export async function setBeadImage(db: Db, beadId: number, url: string | null) {
+  await db
+    .update(beads)
+    .set({ imageUrl: url, updatedAt: Math.floor(Date.now() / 1000) })
+    .where(eq(beads.id, beadId))
+}
+
+/**
+ * 進貨總額（已確認的進貨單）。
+ *
+ * 店主的認知是「我總共花了多少錢叫貨」，所以用進貨單原始金額加總，
+ * 而不是「庫存顆數 × 單顆成本」——後者會隨著珠子用掉而減少，
+ * 反映的是剩餘庫存價值，不是花費。
+ *
+ * 人民幣直接加總；台幣用各批進貨當時的匯率換算後加總，
+ * 因為每批匯率可能不同（凍結於 purchases.fxRateX100）。
+ */
+export async function getPurchaseTotals(db: Db) {
+  const rows = await db
+    .select({
+      fxRateX100: purchases.fxRateX100,
+      freightCnyCents: purchases.freightCnyCents,
+      goodsCnyCents: sql<number>`SUM(${purchaseItems.unitPriceCnyCents} * ${purchaseItems.quantity})`,
+    })
+    .from(purchases)
+    .innerJoin(purchaseItems, eq(purchaseItems.purchaseId, purchases.id))
+    .where(eq(purchases.status, 'confirmed'))
+    .groupBy(purchases.id)
+
+  let cnyCents = 0
+  let twdCents = 0
+  for (const r of rows) {
+    const batch = Number(r.goodsCnyCents ?? 0) + r.freightCnyCents
+    cnyCents += batch
+    twdCents += cnyToTwd(batch, r.fxRateX100)
+  }
+  return { cnyCents, twdCents, batches: rows.length }
 }

@@ -3,8 +3,11 @@
  *
  * ⚠️【重要】此解析器的輸出是【建議值】，不是權威值。
  * 淘寶規格欄由賣家自由填寫，格式極不一致，必定有無法判讀的情況。
- * 因此匯入流程強制：解析 → 顯示給使用者逐列確認／修改 → 才寫入資料庫。
- * 任何工作流都不得略過確認步驟直接採用解析結果。
+ *
+ * 判讀不出顆數時一律回傳 beadsPerUnit: 1、confidence: 'manual'（ADR-0006 修訂 2026-09-14）。
+ * 這個 1 是讓流程不卡住的預設值，**不是**確認過的數字——
+ * 顆數的人工確認在雲端試算表完成，交給系統匯入的必須是已確認過的版本。
+ * confidence 為 'manual' 即代表該數字未經確認，成本可能高估數倍。
  *
  * 以下規則由實際檔案（订单数据.xlsx）樣本歸納而來。
  */
@@ -12,9 +15,9 @@
 export type CountConfidence = 'parsed' | 'estimated' | 'manual'
 
 export interface ParsedSpec {
-  /** 每件包含幾顆。null = 解析不出，UI 必須要求使用者填寫 */
-  beadsPerUnit: number | null
-  /** parsed = 有把握；estimated = 約數需你確認；manual = 無法解析 */
+  /** 每件包含幾顆。解析不出時為 1（預設值，未經確認，見檔頭說明） */
+  beadsPerUnit: number
+  /** parsed = 有把握；estimated = 約數需你確認；manual = 無法解析，顆數為預設值 1 */
   confidence: CountConfidence
   /** 解析出的直徑（mm），供建檔時預填 */
   sizeMm: number | null
@@ -66,16 +69,16 @@ function parseSize(s: string): number | null {
  *   「4mm/1颗」                     → 1   parsed
  *   「8A白水晶 6mm【约60颗左右】」   → 60  estimated（實收可能不同）
  *   「素银01款 3.5mm/颗(孔径约1.5mm)」→ 1   parsed（單顆計價）
- *   「大号直径约7.5mm」              → null manual（無顆數資訊）
- *   「24款」「56亮天蓝」             → null manual（純款式編號）
- *   「日本扁丝盒装...长约45米...」    → null manual（線材按米計）
+ *   「大号直径约7.5mm」              → 1 manual（無顆數資訊，預設 1）
+ *   「24款」「56亮天蓝」             → 1 manual（純款式編號，預設 1）
+ *   「日本扁丝盒装...长约45米...」    → 1 manual（線材按米計，預設 1）
  */
 export function parseBeadSpec(rawSpec: string | null | undefined): ParsedSpec {
   const empty: ParsedSpec = {
-    beadsPerUnit: null,
+    beadsPerUnit: 1,
     confidence: 'manual',
     sizeMm: null,
-    reason: '規格欄為空，請手動填寫每件顆數',
+    reason: '規格欄為空，顆數預設 1，請在試算表確認',
   }
   if (!rawSpec || !rawSpec.trim()) return empty
 
@@ -85,10 +88,10 @@ export function parseBeadSpec(rawSpec: string | null | undefined): ParsedSpec {
   // 線材類：按長度計價，不是珠子
   if (/\d+\s*米|长约\d+/.test(s)) {
     return {
-      beadsPerUnit: null,
+      beadsPerUnit: 1,
       confidence: 'manual',
       sizeMm: null,
-      reason: '這是線材（按長度計價），非珠子。請確認是否要建檔，並自行決定計量方式',
+      reason: '這是線材（按長度計價），非珠子。顆數預設 1，請在試算表確認計量方式',
     }
   }
 
@@ -132,18 +135,52 @@ export function parseBeadSpec(rawSpec: string | null | undefined): ParsedSpec {
   // 只有尺寸沒顆數：大号直径约7.5mm
   if (sizeMm !== null) {
     return {
-      beadsPerUnit: null,
+      beadsPerUnit: 1,
       confidence: 'manual',
       sizeMm,
-      reason: `只解析到直徑 ${sizeMm}mm，未標示顆數，請手動填寫`,
+      reason: `只解析到直徑 ${sizeMm}mm，未標示顆數，顆數預設 1，請在試算表確認`,
     }
   }
 
   // 純款式編號：24款、56亮天蓝
   return {
-    beadsPerUnit: null,
+    beadsPerUnit: 1,
     confidence: 'manual',
     sizeMm: null,
-    reason: '規格僅為款式／顏色編號，未含顆數，請手動填寫',
+    reason: '規格僅為款式／顏色編號，未含顆數，顆數預設 1，請在試算表確認',
   }
+}
+
+/* ────────────────────────────────────────────────────────────
+   材質分類
+   ──────────────────────────────────────────────────────────── */
+
+/**
+ * 從淘寶商品名推導材質分類，供後台選珠時分組與篩選。
+ *
+ * 分類只有四種，刻意不細分——選珠時要的是快速縮小範圍，
+ * 分太細反而每組只有一兩顆，失去分組意義。
+ *
+ * 判斷順序有意義：線材與配件的商品名常含石材字樣
+ * （例：「沙金隔珠diy手链水晶配件」），必須先於水晶／玉石判斷。
+ */
+export function inferCategory(rawTitle: string, rawSpec?: string | null): string {
+  const t = `${rawTitle} ${rawSpec ?? ''}`.toLowerCase()
+
+  // 配件：沙金、銀、包金、隔片、花托、轉運珠
+  // 必須先於線材判斷——這類商品名常含「编织绳」「手绳」等字樣
+  // （例：「古法沙金转运珠…diy手工编织绳配饰挂件」是珠子，不是繩子）
+  // 「线圈」是編織好的小圈飾件，算配件不是線材（店主 2026-09-15 指正）
+  if (/沙金|925银|s925|银珠|包金|镀金|隔片|花托|转运珠|桶珠|水泡珠|线圈/.test(t)) return '配件'
+
+  // 線材：整捲按長度計價，不是一顆一顆算
+  if (/弹力线|扁丝|手串绳|绳项链/.test(t)) return '線材'
+
+  // 玉石類：玉髓、瑪瑙、和田玉、曜石
+  if (/玛瑙|玉髓|和田玉|碧玉|玉石|曜石|耀石/.test(t)) return '玉石'
+
+  // 水晶類
+  if (/水晶|晶|月光石|海蓝宝|珍珠|贝珠|石榴石|草莓|兔毛|塔晶/.test(t)) return '水晶'
+
+  return '其他'
 }

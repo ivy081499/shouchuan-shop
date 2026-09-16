@@ -20,7 +20,7 @@ export default async function ProductsPage() {
       {beads.length === 0 && (
         <div className="mb-6 border-l-2 border-accent bg-sunk/50 px-4 py-3 text-[13px]">
           還沒有珠子，配方會沒東西可選。建議先
-          <Link href="/admin/import" className="mx-1 text-accent underline underline-offset-2">
+          <Link href="/admin/inventory" className="mx-1 text-accent underline underline-offset-2">
             匯入淘寶訂單
           </Link>
           建立珠子成本。

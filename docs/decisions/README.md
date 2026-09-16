@@ -42,4 +42,5 @@
 | [0007](ADR-0007-no-customer-login.md) | 前台訪客結帳，不做客戶登入 | 前台部分被 0008 取代 |
 | [0008](ADR-0008-freestore-for-storefront.md) | **前台改用 FreeStore，本系統專注後台** | 已採用 |
 | [0009](ADR-0009-brand-name.md) | 品牌名稱：平凡生活 / Ordinary Days | 已採用 |
-| [0010](ADR-0010-customs-duty.md) | **關稅攤提與進貨隔離流程** | 已採用 |
+| [0010](ADR-0010-recipe-bead-picker.md) | 配方編輯器選珠：搜尋、分類、庫存0可選、縮圖 | 已採用 |
+| [0011](ADR-0011-customs-duty.md) | **關稅攤提與進貨隔離流程** | 已採用 |

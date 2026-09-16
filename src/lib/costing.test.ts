@@ -2,7 +2,7 @@
  * 成本計算測試 — 資料取自實際的 订单数据.xlsx
  * 執行：node --experimental-strip-types src/lib/costing.test.ts
  */
-import { calcPurchaseCosts, calcBuildableQty, calcShortages, calcMargin, calcProductCost } from './costing.ts'
+import { calcPurchaseCosts, calcBuildableQty, calcShortages, calcMargin, calcProductCost, calcMovingAverageCost } from './costing.ts'
 import { allocateProportional, formatTWD } from './money.ts'
 
 let pass = 0
@@ -79,5 +79,29 @@ const short = calcShortages([
 check('缺口 = 需求 + 安全庫存 − 庫存', short[0].shortageQty, 28)
 check('庫存充足時為 0', short[1].shortageQty, 0)
 
-console.log(`\n${pass} passed, ${fail} failed`)
+/* ── 重複進貨：移動加權平均 ── */
+console.log('\n── 重複進貨成本 ──')
+
+// 現有 5 顆 @ NT$22.79，新進 5 顆共 NT$150.00（每顆 $30）
+check(
+  '加權平均 = (5×2279 + 15000) ÷ 10',
+  calcMovingAverageCost(5, 2279, 5, 15000),
+  2640,
+)
+
+// 庫存用完後再進貨，直接採用新成本
+check('現有庫存 0 → 用新成本', calcMovingAverageCost(0, 2279, 4, 8000), 2000)
+
+// 同價進貨，成本不該變動
+check('同價進貨成本不變', calcMovingAverageCost(10, 500, 10, 5000), 500)
+
+// 進貨 0 顆是無效輸入，保持原成本
+check('進貨 0 顆 → 成本不變', calcMovingAverageCost(10, 500, 0, 0), 500)
+
+// 舊批貴、新批便宜，平均應落在兩者之間
+const avg = calcMovingAverageCost(3, 5000, 7, 14000)
+check('高低價混合落在區間內', avg > 2000 && avg < 5000, true)
+check('高低價混合 = (3×5000 + 14000) ÷ 10', avg, 2900)
+
+console.log(`\n總計 ${pass} passed, ${fail} failed`)
 if (fail > 0) process.exit(1)

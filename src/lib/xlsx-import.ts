@@ -6,6 +6,8 @@
  *       型號款式、商品數量、商品金額、實付金額、運費、物流公司、物流單號
  *
  * ⚠️ 解析結果是【建議值】，必須經店主逐列確認才可寫入（見 ADR-0006）。
+ * 判讀不出顆數的列 beadsPerUnit 為預設值 1、countSource 為 'manual'，
+ * 顆數確認在雲端試算表完成（ADR-0006 修訂 2026-09-14）。
  */
 
 import ExcelJS from 'exceljs'
@@ -25,8 +27,8 @@ export interface ParsedPurchaseRow {
   /** 該訂單的運費（人民幣分），同訂單各列相同 */
   freightCnyCents: number
 
-  /* 以下為解析建議值，UI 必須讓店主確認 */
-  beadsPerUnit: number | null
+  /* 以下為解析建議值；判讀不出時 beadsPerUnit 為預設值 1、countSource 為 'manual' */
+  beadsPerUnit: number
   countSource: CountConfidence
   sizeMm: number | null
   parseReason: string

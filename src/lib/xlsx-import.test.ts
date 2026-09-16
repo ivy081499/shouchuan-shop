@@ -89,7 +89,7 @@ check('無運費訂單為 0', rows[0].freightCnyCents, 0)
 check('約數標記為 estimated', rows[5].countSource, 'estimated')
 check('白水晶解析 60 顆', rows[5].beadsPerUnit, 60)
 check('件數 2 正確', rows[5].quantity, 2)
-check('「24款」無法解析', rows[6].beadsPerUnit, null)
+check('「24款」判讀不出 → 預設 1', rows[6].beadsPerUnit, 1)
 check('「24款」標記為 manual', rows[6].countSource, 'manual')
 check('和田玉「5颗装」解析為 5', rows[2].beadsPerUnit, 5)
 

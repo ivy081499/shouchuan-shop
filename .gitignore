@@ -8,3 +8,6 @@ backups/
 .DS_Store
 .data/
 .data-dev/
+.claude/
+*.xlsx
+public/uploads/

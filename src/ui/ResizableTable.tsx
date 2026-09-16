@@ -78,10 +78,15 @@ export function useColumnVisibility(storageKey: string, columns: Column[]) {
   const toggle = useCallback(
     (key: string) => {
       const col = columns.find((c) => c.key === key)
-      if (col?.required) return // 必填欄位不可隱藏
+      if (col?.required) return // 標為 required 的欄位不可隱藏
       setHidden((prev) => {
         const next = new Set(prev)
-        next.has(key) ? next.delete(key) : next.add(key)
+        if (next.has(key)) next.delete(key)
+        else {
+          // 擋下「全部隱藏」——表格會整個空白，看起來像壞了
+          if (next.size >= columns.length - 1) return prev
+          next.add(key)
+        }
         try {
           localStorage.setItem(`colv:${storageKey}`, JSON.stringify([...next]))
         } catch {
@@ -169,9 +174,10 @@ export function ColumnResizer({
 
   function onPointerDown(e: React.PointerEvent) {
     e.preventDefault()
+    e.stopPropagation()
     startX.current = e.clientX
     setDragging(true)
-    ;(e.target as HTMLElement).setPointerCapture(e.pointerId)
+    ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
   }
 
   function onPointerMove(e: React.PointerEvent) {
@@ -184,20 +190,48 @@ export function ColumnResizer({
   }
 
   function onPointerUp(e: React.PointerEvent) {
+    if (!dragging) return
     setDragging(false)
-    ;(e.target as HTMLElement).releasePointerCapture(e.pointerId)
+    const el = e.currentTarget as HTMLElement
+    if (el.hasPointerCapture(e.pointerId)) el.releasePointerCapture(e.pointerId)
+  }
+
+  /** 鍵盤調整：聚焦後左右鍵每次 ±16px，按住 Shift 為 ±64px */
+  function onKeyDown(e: React.KeyboardEvent) {
+    const step = e.shiftKey ? 64 : 16
+    if (e.key === 'ArrowLeft') {
+      e.preventDefault()
+      onDrag(-step)
+    } else if (e.key === 'ArrowRight') {
+      e.preventDefault()
+      onDrag(step)
+    } else if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault()
+      onReset()
+    }
   }
 
   return (
     <span
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="調整欄寬"
+      tabIndex={0}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
+      onPointerCancel={onPointerUp}
       onDoubleClick={onReset}
-      title="拖曳調整欄寬，雙擊還原"
-      className={`absolute right-0 top-0 h-full w-2 cursor-col-resize select-none touch-none ${
-        dragging ? 'bg-accent/40' : 'hover:bg-accent/25'
-      }`}
+      onKeyDown={onKeyDown}
+      title="拖曳調整欄寬；雙擊還原；也可用左右方向鍵"
+      // 往左多伸出 4px 比較好抓，但視覺上只顯示右側細線
+      className={`absolute -right-1 top-0 z-10 h-full w-3 cursor-col-resize select-none touch-none
+        after:absolute after:right-1 after:top-1 after:h-[calc(100%-0.5rem)] after:w-px after:content-['']
+        focus:outline-none ${
+          dragging
+            ? 'after:bg-accent'
+            : 'after:bg-hairline hover:after:bg-accent focus-visible:after:bg-accent'
+        }`}
     />
   )
 }
