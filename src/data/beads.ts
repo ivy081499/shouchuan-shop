@@ -5,7 +5,7 @@
 
 import { eq, and, inArray, asc, desc, sql, like, or } from 'drizzle-orm'
 import type { Db } from './db.ts'
-import { beads, suppliers, stockLedger, recipes, purchases, purchaseItems } from '@db/schema'
+import { beads, suppliers, stockLedger, recipes, purchases, purchaseItems, shipments } from '@db/schema'
 import type { BeadInput, SupplierInput } from '@/contracts/bead'
 import { cnyToTwd } from '@/lib/money'
 
@@ -222,6 +222,10 @@ export async function setBeadImage(db: Db, beadId: number, url: string | null) {
  *
  * 人民幣直接加總；台幣用各批進貨當時的匯率換算後加總，
  * 因為每批匯率可能不同（凍結於 purchases.fxRateX100）。
+ *
+ * 關稅另計：海關收台幣，不經匯率換算，掛在 shipments 上。
+ * 回傳的 `twdCents` 是貨款（含運費）不含關稅，
+ * `dutyTwdCents` 是關稅，`totalTwdCents` 才是實際總花費。
  */
 export async function getPurchaseTotals(db: Db) {
   const rows = await db
@@ -242,5 +246,24 @@ export async function getPurchaseTotals(db: Db) {
     cnyCents += batch
     twdCents += cnyToTwd(batch, r.fxRateX100)
   }
-  return { cnyCents, twdCents, batches: rows.length }
+
+  // 關稅：只算有掛到已確認進貨單的批次，避免草稿批次混進來
+  const dutyRows = await db
+    .selectDistinct({ id: shipments.id, dutyTwdCents: shipments.dutyTwdCents })
+    .from(shipments)
+    .innerJoin(purchases, eq(purchases.shipmentId, shipments.id))
+    .where(eq(purchases.status, 'confirmed'))
+
+  const dutyTwdCents = dutyRows.reduce((s, r) => s + r.dutyTwdCents, 0)
+
+  return {
+    cnyCents,
+    twdCents,
+    dutyTwdCents,
+    totalTwdCents: twdCents + dutyTwdCents,
+    /** 淘寶訂單數（一張淘寶訂單 = 一筆 purchases） */
+    orderCount: rows.length,
+    /** 到貨批次數（多張訂單集運併單算一批，一批收一次關稅） */
+    shipmentCount: dutyRows.length,
+  }
 }
