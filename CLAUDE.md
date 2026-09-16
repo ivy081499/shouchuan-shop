@@ -36,6 +36,24 @@
 
 ---
 
+## 🚫 【硬規則】進貨一律隔離處理
+
+**店主明確要求：每次進貨都要另開分支，資料庫也要分開，完全不能影響現行資料。**
+
+```bash
+git worktree add .claude/worktrees/<批次名> -b <批次名>
+cd .claude/worktrees/<批次名> && npm install
+mkdir -p .data && cp ../../../.data/local.sqlite .data/local.sqlite
+```
+
+現行資料庫 `~/Desktop/手串/.data/local.sqlite`，**進貨作業絕不可直接寫它**。
+驗證無誤、店主確認後才合併。詳見 `docs/decisions/ADR-0010`。
+
+**關稅**：一批貨清關一次收一筆，掛在 `shipments` 表，
+用 `calcShipmentCosts()` 跨訂單攤提（不是 `calcPurchaseCosts()`）。
+
+---
+
 ## 🚫 三條凍結規則（違反會毀掉整個專案）
 
 ### 1. Schema 凍結

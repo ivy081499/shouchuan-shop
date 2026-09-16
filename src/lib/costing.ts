@@ -73,6 +73,87 @@ export function calcPurchaseCosts(
 }
 
 /* ────────────────────────────────────────────────────────────
+   關稅攤提（整批）
+
+   關稅是「一批貨清關一次」收的，不是每張淘寶訂單各收一次。
+   所以不能在 calcPurchaseCosts（單張訂單）裡算，必須跨訂單處理。
+   ──────────────────────────────────────────────────────────── */
+
+export interface ShipmentLineInput extends PurchaseLineInput {
+  /** 這一列屬於哪張進貨單，用來把結果寫回去 */
+  purchaseItemId: number
+  /** 該張進貨單的運費（人民幣分），同單各列相同 */
+  freightCnyCents: CnyCents
+  /** 該張進貨單的匯率 */
+  fxRateX100: number
+}
+
+export interface ShipmentLineCost extends PurchaseLineCost {
+  purchaseItemId: number
+  /** 本列攤得的關稅（新台幣分） */
+  dutyShareTwdCents: Cents
+}
+
+/**
+ * 整批到貨的成本計算（含關稅）。
+ *
+ * 兩層攤提：
+ *   1. 運費：各張淘寶訂單內部，按該單各列金額比例攤（同 calcPurchaseCosts）
+ *   2. 關稅：整批跨訂單，按各列「貨款換算台幣後」的金額比例攤
+ *
+ * 關稅用台幣計價（海關收台幣），所以攤提基準要先把貨款換成台幣，
+ * 否則不同匯率的訂單之間比例會失真。
+ *
+ * 單顆成本 = (貨款 + 攤得運費) × 匯率 + 攤得關稅 ÷ 總顆數
+ */
+export function calcShipmentCosts(
+  lines: ShipmentLineInput[],
+  dutyTwdCents: Cents,
+): ShipmentLineCost[] {
+  if (lines.length === 0) return []
+
+  // 1. 先按訂單分組算運費攤提
+  //    依 (freight, fx) 相同者視為同一張訂單
+  const groups = new Map<string, ShipmentLineInput[]>()
+  for (const l of lines) {
+    const k = `${l.freightCnyCents}|${l.fxRateX100}`
+    const arr = groups.get(k) ?? []
+    arr.push(l)
+    groups.set(k, arr)
+  }
+
+  // 每組內部攤運費，得出未含關稅的台幣金額
+  const interim = new Map<number, { line: ShipmentLineInput; freightShare: number; twdBeforeDuty: Cents }>()
+  for (const group of groups.values()) {
+    const weights = group.map((l) => l.unitPriceCnyCents * l.quantity)
+    const shares = allocateProportional(group[0].freightCnyCents, weights)
+    group.forEach((l, i) => {
+      const goodsCny = l.unitPriceCnyCents * l.quantity
+      const twd = cnyToTwd(goodsCny + shares[i], l.fxRateX100)
+      interim.set(l.purchaseItemId, { line: l, freightShare: shares[i], twdBeforeDuty: twd })
+    })
+  }
+
+  // 2. 關稅按「台幣貨款」比例跨訂單攤提
+  const ordered = lines.map((l) => interim.get(l.purchaseItemId)!)
+  const dutyWeights = ordered.map((x) => x.twdBeforeDuty)
+  const dutyShares = allocateProportional(dutyTwdCents, dutyWeights)
+
+  return ordered.map((x, i) => {
+    const totalBeads = x.line.quantity * x.line.beadsPerUnit
+    const lineTotalCents = x.twdBeforeDuty + dutyShares[i]
+    return {
+      purchaseItemId: x.line.purchaseItemId,
+      freightShareCnyCents: x.freightShare,
+      dutyShareTwdCents: dutyShares[i],
+      totalBeads,
+      unitCostCents: totalBeads > 0 ? Math.round(lineTotalCents / totalBeads) : 0,
+      lineTotalCents,
+    }
+  })
+}
+
+/* ────────────────────────────────────────────────────────────
    手串成本與毛利
    ──────────────────────────────────────────────────────────── */
 

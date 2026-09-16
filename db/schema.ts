@@ -92,6 +92,33 @@ export const beads = sqliteTable(
 )
 
 /* ────────────────────────────────────────────────────────────
+   2.5 shipments — 到貨批次（一批貨 = 一次清關 = 一筆關稅）
+
+   多張淘寶訂單集運併單、一起清關時，關稅是整批收一次，
+   不是每張訂單各收一次。關稅掛在這一層，再攤到各進貨明細。
+   ──────────────────────────────────────────────────────────── */
+export const shipments = sqliteTable(
+  'shipments',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    /** 批次名稱，例：2026-09 第一批。店主自訂，方便辨識 */
+    name: text('name').notNull(),
+    /** 到貨日期（Unix 秒） */
+    arrivedAt: integer('arrived_at'),
+
+    /**
+     * 這批貨的關稅（新台幣分）。店主口頭告知後填入。
+     * 依各進貨明細的商品金額比例攤提到每一列，與運費同一套邏輯。
+     */
+    dutyTwdCents: integer('duty_twd_cents').notNull().default(0),
+
+    note: text('note'),
+    ...timestamps,
+  },
+  (t) => [index('shipments_arrived_idx').on(t.arrivedAt)],
+)
+
+/* ────────────────────────────────────────────────────────────
    3. purchases — 進貨單（一筆淘寶訂單 = 一張進貨單）
    ──────────────────────────────────────────────────────────── */
 export const purchases = sqliteTable(
@@ -101,6 +128,12 @@ export const purchases = sqliteTable(
     /** 淘寶訂單號，例：5127421790026175046 */
     sourceOrderNo: text('source_order_no'),
     supplierId: integer('supplier_id').references(() => suppliers.id, { onDelete: 'set null' }),
+
+    /**
+     * 所屬到貨批次。同一批（集運併單）的多張訂單共用一筆關稅。
+     * null = 尚未歸批（舊資料或單獨清關）。
+     */
+    shipmentId: integer('shipment_id').references(() => shipments.id, { onDelete: 'set null' }),
 
     /** 下單日期（Unix 秒） */
     orderedAt: integer('ordered_at'),
@@ -172,6 +205,13 @@ export const purchaseItems = sqliteTable(
      * 公式見 src/data/costing.ts — 唯一的計算來源。
      */
     computedUnitCostCents: integer('computed_unit_cost_cents'),
+
+    /**
+     * 攤得關稅（新台幣分）。
+     * 關稅掛在 shipments，依本列商品金額佔整批總額的比例分攤下來。
+     * 單顆成本 = (貨款 + 攤得運費) × 匯率 + 攤得關稅，再除以總顆數。
+     */
+    dutyShareTwdCents: integer('duty_share_twd_cents').notNull().default(0),
 
     ...timestamps,
   },
