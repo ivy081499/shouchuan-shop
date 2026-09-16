@@ -44,9 +44,15 @@
 git worktree add .claude/worktrees/<批次名> -b <批次名>
 cd .claude/worktrees/<批次名> && npm install
 mkdir -p .data && cp ../../../.data/local.sqlite .data/local.sqlite
+mkdir -p public/uploads/beads && cp ../../../public/uploads/beads/*.png public/uploads/beads/
 ```
 
+**圖檔一定要複製**：`.gitignore` 排除 `public/uploads/`，建 worktree 時不會帶過去。
+不複製的話珠子縮圖全部顯示不出來，會誤以為圖片不見了（實際仍在主資料夾）。
+
 現行資料庫 `~/Desktop/手串/.data/local.sqlite`，**進貨作業絕不可直接寫它**。
+
+**完整步驟見 `docs/09-進貨SOP.md`，照做不要自己發明流程。**
 驗證無誤、店主確認後才合併。詳見 `docs/decisions/ADR-0011`。
 
 **關稅**：一批貨清關一次收一筆，掛在 `shipments` 表，
@@ -97,6 +103,7 @@ git status --short
 | 確認我能改哪些檔 | `docs/06-WORKSTREAMS.md` |
 | 跑指令、遷移、備份 | `docs/07-OPERATIONS.md` |
 | 前台／FreeStore 相關 | `docs/08-FREESTORE.md` |
+| **進貨、匯入、關稅** | **`docs/09-進貨SOP.md` ← 動手前必讀** |
 | 「這件事為什麼這樣決定？」 | `docs/decisions/` — **不要重新討論已定案的事** |
 
 ---

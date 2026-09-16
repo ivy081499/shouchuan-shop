@@ -81,7 +81,7 @@ export default async function InventoryPage() {
               關稅 <Money cents={totals.dutyTwdCents} showCents />
             </>
           }
-          hint={`${totals.batches} 批進貨`}
+          hint={`${totals.shipmentCount} 批進貨・${totals.orderCount} 筆訂單`}
           explain="實際花費總額＝貨款＋關稅。貨款是已確認進貨單的金額加總（含運費），人民幣直接相加、台幣用每批當時匯率各自換算；關稅是海關收的台幣，不經匯率換算，一批貨清關收一次。這是「總共花了多少錢叫貨」，不會因為珠子用掉而減少。"
         />
         <Stat

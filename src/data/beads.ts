@@ -261,6 +261,9 @@ export async function getPurchaseTotals(db: Db) {
     twdCents,
     dutyTwdCents,
     totalTwdCents: twdCents + dutyTwdCents,
-    batches: rows.length,
+    /** 淘寶訂單數（一張淘寶訂單 = 一筆 purchases） */
+    orderCount: rows.length,
+    /** 到貨批次數（多張訂單集運併單算一批，一批收一次關稅） */
+    shipmentCount: dutyRows.length,
   }
 }
