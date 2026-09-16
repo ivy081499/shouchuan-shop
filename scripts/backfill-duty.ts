@@ -8,8 +8,8 @@
  * 加 --dry-run 只試算不寫入。
  */
 import Database from 'better-sqlite3'
-import { calcShipmentCosts, type ShipmentLineInput } from '../src/lib/costing.ts'
-import { formatTWD } from '../src/lib/money.ts'
+import { calcShipmentCosts, calcMovingAverageCost, type ShipmentLineInput } from '../src/lib/costing.ts'
+import { formatTWD, type Cents } from '../src/lib/money.ts'
 
 const dbPath = process.argv[2]
 const dutyYuan = Number.parseFloat(process.argv[3] ?? '0')
@@ -98,10 +98,25 @@ const tx = db.transaction(() => {
   )
   const updBead = db.prepare('UPDATE beads SET unit_cost_cents = ?, updated_at = unixepoch() WHERE id = ?')
 
+  /*
+   * 回補是「重算」不是「疊加」：這批貨的成本本來就已經寫進 beads，
+   * 現在只是把關稅加進去重算一次，所以起算基準要歸零，
+   * 用 calcMovingAverageCost 從 0 開始累積本批的量與金額。
+   *
+   * 同一顆珠若在這批有多筆明細（例如同商品分兩次下單），
+   * 會依序加權平均，與 import/actions.ts 的邏輯一致。
+   */
+  const acc = new Map<number, { qty: number; cost: Cents }>()
+
   for (const r of rows) {
     const c = costById.get(r.id)!
     updItem.run(c.dutyShareTwdCents, c.unitCostCents, r.id)
-    if (r.bead_id !== null) updBead.run(c.unitCostCents, r.bead_id)
+
+    if (r.bead_id === null) continue
+    const prev = acc.get(r.bead_id) ?? { qty: 0, cost: 0 }
+    const newCost = calcMovingAverageCost(prev.qty, prev.cost, c.totalBeads, c.lineTotalCents)
+    acc.set(r.bead_id, { qty: prev.qty + c.totalBeads, cost: newCost })
+    updBead.run(newCost, r.bead_id)
   }
   return shipmentId
 })
