@@ -165,18 +165,32 @@ export function ColumnToggles({
 export function ColumnResizer({
   onDrag,
   onReset,
+  variant = 'header',
 }: {
   onDrag: (deltaX: number) => void
   onReset: () => void
+  /**
+   * header：表頭用，細線常駐可見。
+   * cell：資料列用，平常隱形，滑鼠移到那一列才浮現
+   *       —— 每列都畫線的話整張表會變成格子紙，很吵。
+   */
+  variant?: 'header' | 'cell'
 }) {
   const startX = useRef(0)
   const [dragging, setDragging] = useState(false)
+
+  // 拖曳中元件若被卸載（換頁、篩選），userSelect 會卡在 none，整頁選不了字
+  useEffect(() => () => {
+    document.body.style.userSelect = ''
+  }, [])
 
   function onPointerDown(e: React.PointerEvent) {
     e.preventDefault()
     e.stopPropagation()
     startX.current = e.clientX
     setDragging(true)
+    // 拖曳中鎖住整頁的文字選取，否則橫拖會把儲存格內容反白
+    document.body.style.userSelect = 'none'
     ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
   }
 
@@ -192,6 +206,7 @@ export function ColumnResizer({
   function onPointerUp(e: React.PointerEvent) {
     if (!dragging) return
     setDragging(false)
+    document.body.style.userSelect = ''
     const el = e.currentTarget as HTMLElement
     if (el.hasPointerCapture(e.pointerId)) el.releasePointerCapture(e.pointerId)
   }
@@ -230,7 +245,10 @@ export function ColumnResizer({
         focus:outline-none ${
           dragging
             ? 'after:bg-accent'
-            : 'after:bg-hairline hover:after:bg-accent focus-visible:after:bg-accent'
+            : variant === 'cell'
+              ? // 資料列：平常完全隱形，滑鼠移到該列才浮現，避免整張表都是線
+                'after:bg-transparent group-hover/row:after:bg-hairline hover:after:bg-accent focus-visible:after:bg-accent'
+              : 'after:bg-hairline hover:after:bg-accent focus-visible:after:bg-accent'
         }`}
     />
   )

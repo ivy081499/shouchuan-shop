@@ -503,16 +503,36 @@ export default function BeadsTable({
               {pageRows.map((b) => {
                 const isLow = b.reorderPoint > 0 && b.stockQty <= b.reorderPoint
                 return (
-                  <tr key={b.id}>
+                  <tr key={b.id} className="group/row">
                     {visible.map((c) => {
-                      const cls = `border-b border-hairline py-2.5 pr-3 align-middle ${
+                      const cls = `relative border-b border-hairline py-2.5 pr-3 align-middle ${
                         c.align === 'right' ? 'text-right tnum' : 'text-left'
                       }`
+                      /*
+                       * 資料列也能拖欄寬（店主要求）。
+                       * 欄寬存在 <colgroup>，所以從哪一列拖都是改同一個值，
+                       * 不會出現「第 3 列比較寬」的錯亂。
+                       */
+                      const grip = (
+                        <ColumnResizer
+                          variant="cell"
+                          onDrag={(dx) =>
+                            persist({
+                              ...widths,
+                              [c.key]: Math.round(
+                                Math.max(c.minWidth ?? 60, (widths[c.key] ?? c.width) + dx),
+                              ),
+                            })
+                          }
+                          onReset={() => reset(c.key)}
+                        />
+                      )
                       switch (c.key) {
                         case 'image':
                           return (
                             <td key={c.key} className={cls}>
                               <BeadImageCell beadId={b.id} name={b.name} initialUrl={b.imageUrl} />
+                              {grip}
                             </td>
                           )
                         case 'name':
@@ -524,6 +544,7 @@ export default function BeadsTable({
                                 value={b.name}
                                 placeholder="未命名"
                               />
+                              {grip}
                             </td>
                           )
                         case 'sourceTitle':
@@ -531,12 +552,14 @@ export default function BeadsTable({
                             <td key={c.key} className={cls}>
                               {/* 淘寶原文照登，不改字不簡化——滑過看完整內容 */}
                               <Truncated text={b.sourceTitle} />
+                              {grip}
                             </td>
                           )
                         case 'sourceSpec':
                           return (
                             <td key={c.key} className={cls}>
                               <Truncated text={b.sourceSpec} />
+                              {grip}
                             </td>
                           )
                         case 'category':
@@ -549,6 +572,7 @@ export default function BeadsTable({
                                 options={categories}
                                 placeholder="未分類"
                               />
+                              {grip}
                             </td>
                           )
                         case 'sizeMm':
@@ -560,18 +584,21 @@ export default function BeadsTable({
                                 value={b.sizeMm}
                                 align="right"
                               />
+                              {grip}
                             </td>
                           )
                         case 'unitCostCents':
                           return (
                             <td key={c.key} className={cls}>
                               <Money cents={b.unitCostCents} showCents />
+                              {grip}
                             </td>
                           )
                         case 'stockQty':
                           return (
                             <td key={c.key} className={cls}>
                               <StockCell beadId={b.id} stockQty={b.stockQty} isLow={isLow} />
+                              {grip}
                             </td>
                           )
                         case 'reorderPoint':
@@ -583,6 +610,7 @@ export default function BeadsTable({
                                 value={b.reorderPoint || null}
                                 align="right"
                               />
+                              {grip}
                             </td>
                           )
                         case 'stockValue':
@@ -590,6 +618,7 @@ export default function BeadsTable({
                             <td key={c.key} className={cls}>
                               {/* 顯示到分——不然 5 × $11.85 會顯示成 $59 而不是 $59.25 */}
                               <Money cents={b.stockQty * b.unitCostCents} showCents />
+                              {grip}
                             </td>
                           )
                         case 'sourceUrl':
@@ -608,12 +637,14 @@ export default function BeadsTable({
                               ) : (
                                 <span className="text-ink-soft">—</span>
                               )}
+                              {grip}
                             </td>
                           )
                         default:
                           return (
                             <td key={c.key} className={cls}>
                               <Truncated text={b.supplierName} />
+                              {grip}
                             </td>
                           )
                       }
