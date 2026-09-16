@@ -104,7 +104,10 @@
 
 > 需要改 `db/schema.ts` 或 `src/contracts/**` 的，寫在這裡，不要自己改。
 
-（目前無）
+- [x] **新增 `shipments` 表 + `purchases.shipment_id`** — 關稅需求
+  店主 2026-09-16 口頭核准，於 `feature/customs-duty` 分支執行。
+  一批貨（多張淘寶訂單合併清關）收一次關稅，需要一個群組層級掛關稅金額。
+  `purchase_items` 增 `duty_share_twd_cents` 記錄各列攤得的關稅。
 
 ---
 
