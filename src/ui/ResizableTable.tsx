@@ -178,6 +178,12 @@ export function ColumnResizer({
 }) {
   const startX = useRef(0)
   const [dragging, setDragging] = useState(false)
+  /*
+   * dragging 只用來畫顏色；判斷「正在拖」必須用 ref。
+   * setState 不是同步的，同一輪事件裡 onPointerMove 讀到的還是舊值 false，
+   * 會直接 return 掉，變成拖了沒反應。
+   */
+  const draggingRef = useRef(false)
 
   // 拖曳中元件若被卸載（換頁、篩選），userSelect 會卡在 none，整頁選不了字
   useEffect(() => () => {
@@ -188,6 +194,7 @@ export function ColumnResizer({
     e.preventDefault()
     e.stopPropagation()
     startX.current = e.clientX
+    draggingRef.current = true
     setDragging(true)
     // 拖曳中鎖住整頁的文字選取，否則橫拖會把儲存格內容反白
     document.body.style.userSelect = 'none'
@@ -195,7 +202,7 @@ export function ColumnResizer({
   }
 
   function onPointerMove(e: React.PointerEvent) {
-    if (!dragging) return
+    if (!draggingRef.current) return
     const delta = e.clientX - startX.current
     if (delta !== 0) {
       onDrag(delta)
@@ -204,7 +211,8 @@ export function ColumnResizer({
   }
 
   function onPointerUp(e: React.PointerEvent) {
-    if (!dragging) return
+    if (!draggingRef.current) return
+    draggingRef.current = false
     setDragging(false)
     document.body.style.userSelect = ''
     const el = e.currentTarget as HTMLElement

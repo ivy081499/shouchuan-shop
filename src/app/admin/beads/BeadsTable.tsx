@@ -439,7 +439,7 @@ export default function BeadsTable({
           </button>
         </div>
       ) : (
-        <div className="overflow-x-auto">
+        <div className="max-h-[70vh] overflow-auto">
           {/*
             table-fixed 才吃得到 colgroup 的寬度；
             且必須明確給總寬，否則瀏覽器會把欄位壓縮到容器內，拖曳就看不出效果。
@@ -464,7 +464,12 @@ export default function BeadsTable({
                   return (
                     <th
                       key={c.key}
-                      className={`relative border-b border-hairline pb-2.5 pr-3 font-normal text-ink-soft ${
+                      /*
+                       * sticky 表頭：需要不透明底色，否則捲動時資料列會透出來疊字。
+                       * border-b 在 sticky 下會跟著捲走，改用 shadow 畫底線。
+                       */
+                      className={`sticky top-0 z-20 bg-paper pb-2.5 pr-3 pt-2 font-normal text-ink-soft
+                        shadow-[inset_0_-1px_0_var(--color-hairline)] ${
                         c.align === 'right' ? 'text-right' : 'text-left'
                       }`}
                     >
