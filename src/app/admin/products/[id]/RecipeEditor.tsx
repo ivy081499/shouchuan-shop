@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useRef, useState, useTransition } from 'react'
+import { useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import {
   saveRecipeAction,
   updateProductAction,
@@ -53,6 +53,24 @@ const SORT_LABEL: Record<SortKey, string> = {
   sizeMm: '尺寸',
   unitCostCents: '單顆成本',
   stockQty: '庫存',
+}
+
+const IMG_SIZE_KEY = 'recipe.imageSize'
+
+/**
+ * 尺寸快選的級距。
+ * 依實際庫存訂（目前最大 8.3mm），不是憑空分段——
+ * 珠子進得更大顆時要回來調整。
+ */
+const SIZE_PRESETS: Array<{ label: string; range: Range }> = [
+  { label: '4mm 以下', range: { min: '', max: '4' } },
+  { label: '5–7mm', range: { min: '5', max: '7' } },
+  { label: '8mm 以上', range: { min: '8', max: '' } },
+]
+
+/** 兩個區間條件是否相同，用來判斷快選鈕要不要呈現按下狀態 */
+function sameRange(a: Range, b: Range): boolean {
+  return a.min === b.min && a.max === b.max
 }
 
 /** 數值落在區間內？欄位留白代表不限 */
@@ -114,13 +132,36 @@ export default function RecipeEditor({
   const [selectedOnly, setSelectedOnly] = useState(false)
   const [sortKey, setSortKey] = useState<SortKey>('name')
   const [sortAsc, setSortAsc] = useState(true)
-  /** 篩選列預設收合，免得珠子列表被擠到畫面外 */
+  /** 細項（數字區間、供應商）預設收合；常用的快選按鈕一律攤開 */
   const [filterOpen, setFilterOpen] = useState(false)
+  /**
+   * 縮圖大小。不沿用庫存頁的全域 `--bead-img`，
+   * 否則兩頁會互相改到對方的設定。
+   */
+  const [imgSize, setImgSize] = useState<'sm' | 'lg'>('sm')
 
   const [zoom, setZoom] = useState<{ url: string; name: string } | null>(null)
   const [msg, setMsg] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
+
+  /* 記住上次選的縮圖大小。讀不到就維持預設的小圖。 */
+  useEffect(() => {
+    try {
+      const v = localStorage.getItem(IMG_SIZE_KEY)
+      if (v === 'sm' || v === 'lg') setImgSize(v)
+    } catch {
+      /* 讀不到不影響本次操作 */
+    }
+  }, [])
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(IMG_SIZE_KEY, imgSize)
+    } catch {
+      /* 存不進去不影響本次操作 */
+    }
+  }, [imgSize])
 
   const byId = new Map(beads.map((b) => [b.id, b]))
   const used = new Set(lines.map((l) => l.beadId))
@@ -333,6 +374,10 @@ export default function RecipeEditor({
 
   const categories = [...new Set(visibleBeads.map((b) => b.category ?? UNCATEGORIZED))].sort()
 
+  /** 縮圖邊長：小 36px、大 120px（庫存頁是 44／150，這裡列高較密所以略小） */
+  const thumbPx = imgSize === 'lg' ? 120 : 36
+  const thumbStyle = { height: thumbPx, width: thumbPx }
+
   /** 數值範圍輸入 */
   function RangeInput({ value, onChange }: { value: Range; onChange: (r: Range) => void }) {
     return (
@@ -353,6 +398,32 @@ export default function RecipeEditor({
           className="w-16 border-b border-hairline bg-transparent py-0.5 text-right text-[12px] tnum focus:border-accent focus:outline-none"
         />
       </div>
+    )
+  }
+
+  /** 快選鈕：點一下切換，按下時反白 */
+  function QuickChip({
+    on,
+    onClick,
+    children,
+  }: {
+    on: boolean
+    onClick: () => void
+    children: React.ReactNode
+  }) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        aria-pressed={on}
+        className={`border px-2.5 py-1 text-[12px] transition ${
+          on
+            ? 'border-ink bg-ink text-paper'
+            : 'border-hairline text-ink-soft hover:border-accent hover:text-ink'
+        }`}
+      >
+        {children}
+      </button>
     )
   }
 
@@ -533,8 +604,8 @@ export default function RecipeEditor({
         </div>
 
         <div className="mb-4 border border-hairline">
-          {/* 搜尋列永遠看得到，細部條件收在下面 */}
-          <div className="flex flex-wrap items-center gap-3 px-4 py-2.5">
+          {/* 搜尋 + 大小圖切換 */}
+          <div className="flex flex-wrap items-center gap-3 border-b border-hairline px-4 py-2.5">
             <input
               type="search"
               value={query}
@@ -543,52 +614,95 @@ export default function RecipeEditor({
               className="min-w-[220px] flex-1 border-b border-hairline bg-transparent py-1 text-[13px] focus:border-accent focus:outline-none"
             />
 
-            <label className="flex cursor-pointer items-center gap-1.5 text-[12px] text-ink-soft">
-              <input
-                type="checkbox"
-                checked={selectedOnly}
-                onChange={(e) => setSelectedOnly(e.target.checked)}
-              />
-              只看已選（{lines.length}）
-            </label>
-
-            <button
-              type="button"
-              onClick={() => setFilterOpen((v) => !v)}
-              aria-expanded={filterOpen}
-              className={`border px-3 py-1 text-[12px] transition ${
-                activeFilters > 0
-                  ? 'border-ink bg-ink text-paper'
-                  : 'border-hairline text-ink-soft hover:border-accent hover:text-ink'
-              }`}
-            >
-              篩選{activeFilters > 0 ? ` (${activeFilters})` : ''} {filterOpen ? '▲' : '▼'}
-            </button>
-
-            {activeFilters > 0 && (
-              <button
-                type="button"
-                onClick={clearFilters}
-                className="text-[12px] text-ink-soft underline hover:text-ink"
-              >
-                清除
-              </button>
-            )}
+            <div className="flex items-center text-[12px]">
+              <span className="mr-2 text-ink-soft">圖片</span>
+              <div className="flex border border-hairline">
+                <button
+                  type="button"
+                  onClick={() => setImgSize('sm')}
+                  aria-pressed={imgSize === 'sm'}
+                  className={`px-3 py-1 transition ${
+                    imgSize === 'sm' ? 'bg-ink text-paper' : 'text-ink-soft hover:text-ink'
+                  }`}
+                >
+                  小
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setImgSize('lg')}
+                  aria-pressed={imgSize === 'lg'}
+                  className={`border-l border-hairline px-3 py-1 transition ${
+                    imgSize === 'lg' ? 'bg-ink text-paper' : 'text-ink-soft hover:text-ink'
+                  }`}
+                >
+                  大
+                </button>
+              </div>
+            </div>
           </div>
 
+          {/* 快選：常用條件點一下就好，不必自己打字 */}
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-2 px-4 py-2.5">
+            <span className="mr-1 text-[12px] text-ink-soft">快選</span>
+
+            <QuickChip on={selectedOnly} onClick={() => setSelectedOnly((v) => !v)}>
+              已選 {lines.length}
+            </QuickChip>
+            <QuickChip on={inStockOnly} onClick={() => setInStockOnly((v) => !v)}>
+              有庫存
+            </QuickChip>
+            <QuickChip on={lowStockOnly} onClick={() => setLowStockOnly((v) => !v)}>
+              快沒了
+            </QuickChip>
+
+            <span className="mx-1 h-4 w-px bg-hairline" />
+
+            {categoryOptions.map((c) => (
+              <QuickChip
+                key={c}
+                on={fCats.has(c)}
+                onClick={() => toggleSet(fCats, c, setFCats)}
+              >
+                {c}
+              </QuickChip>
+            ))}
+
+            <span className="mx-1 h-4 w-px bg-hairline" />
+
+            {SIZE_PRESETS.map((s) => (
+              <QuickChip
+                key={s.label}
+                on={sameRange(fSize, s.range)}
+                onClick={() => setFSize(sameRange(fSize, s.range) ? EMPTY_RANGE : s.range)}
+              >
+                {s.label}
+              </QuickChip>
+            ))}
+
+            <div className="ml-auto flex items-center gap-3">
+              {activeFilters > 0 && (
+                <button
+                  type="button"
+                  onClick={clearFilters}
+                  className="text-[12px] text-ink-soft underline hover:text-ink"
+                >
+                  清除 ({activeFilters})
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setFilterOpen((v) => !v)}
+                aria-expanded={filterOpen}
+                className="text-[12px] text-ink-soft hover:text-ink"
+              >
+                {filterOpen ? '收起細項 ▲' : '更多條件 ▼'}
+              </button>
+            </div>
+          </div>
+
+          {/* 細項：要自己填數字的放這，預設收著 */}
           {filterOpen && (
             <div className="grid gap-x-6 gap-y-3 border-t border-hairline px-4 py-3 sm:grid-cols-2 lg:grid-cols-3">
-              <div className="text-[12px] lg:col-span-3">
-                <span className="block text-ink-soft">分類（可複選）</span>
-                <div className="mt-1.5">
-                  <ChipGroup
-                    options={categoryOptions}
-                    selected={fCats}
-                    onToggle={(v) => toggleSet(fCats, v, setFCats)}
-                  />
-                </div>
-              </div>
-
               <div className="text-[12px]">
                 <span className="block text-ink-soft">尺寸 mm</span>
                 <div className="mt-1.5">
@@ -610,7 +724,7 @@ export default function RecipeEditor({
                 </div>
               </div>
 
-              <div className="text-[12px] lg:col-span-2">
+              <div className="text-[12px] lg:col-span-3">
                 <span className="block text-ink-soft">供應商（可複選）</span>
                 <div className="mt-1.5">
                   <ChipGroup
@@ -618,28 +732,6 @@ export default function RecipeEditor({
                     selected={fSups}
                     onToggle={(v) => toggleSet(fSups, v, setFSups)}
                   />
-                </div>
-              </div>
-
-              <div className="text-[12px]">
-                <span className="block text-ink-soft">快速條件</span>
-                <div className="mt-1.5 flex flex-col gap-1">
-                  <label className="flex cursor-pointer items-center gap-1.5">
-                    <input
-                      type="checkbox"
-                      checked={inStockOnly}
-                      onChange={(e) => setInStockOnly(e.target.checked)}
-                    />
-                    只看有庫存
-                  </label>
-                  <label className="flex cursor-pointer items-center gap-1.5">
-                    <input
-                      type="checkbox"
-                      checked={lowStockOnly}
-                      onChange={(e) => setLowStockOnly(e.target.checked)}
-                    />
-                    只看低於安全庫存
-                  </label>
                 </div>
               </div>
             </div>
@@ -723,14 +815,25 @@ export default function RecipeEditor({
                               type="button"
                               onClick={() => setZoom({ url: b.imageUrl as string, name: b.name })}
                               title="點開看大圖"
-                              className="h-9 w-9 shrink-0 overflow-hidden border border-hairline transition hover:border-accent"
+                              style={thumbStyle}
+                              className="shrink-0 overflow-hidden border border-hairline transition hover:border-accent"
                             >
                               {/* 圖片來源含外部網址（淘寶），next/image 需設定網域，故用原生 img */}
                               {/* eslint-disable-next-line @next/next/no-img-element */}
-                              <img src={b.imageUrl} alt={b.name} className="h-full w-full object-cover" />
+                              {/* 大圖是要看清楚料，整張顯示不裁切；小圖填滿比較整齊 */}
+                              <img
+                                src={b.imageUrl}
+                                alt={b.name}
+                                className={`h-full w-full ${
+                                  imgSize === 'lg' ? 'bg-sunk object-contain' : 'object-cover'
+                                }`}
+                              />
                             </button>
                           ) : (
-                            <span className="h-9 w-9 shrink-0 border border-hairline bg-sunk" />
+                            <span
+                              style={thumbStyle}
+                              className="shrink-0 border border-hairline bg-sunk"
+                            />
                           )}
                           <label className="flex flex-1 min-w-[200px] cursor-pointer items-center gap-3">
                             <input type="checkbox" checked={checked} onChange={() => toggle(b.id)} />
