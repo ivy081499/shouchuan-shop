@@ -230,8 +230,9 @@ export default function RecipeEditor({
           <div>
             <div className="text-[11px] tracking-[0.15em] text-ink-soft">商品照片</div>
             <div className="mt-1 text-[12px] text-ink-soft">
-              可一次選多張。存成 <span className="tnum">手串編號-序號</span>，
-              例：<span className="tnum">{productId}-1.jpg</span>；同名檔案直接覆蓋。
+              可一次選多張，<strong>檔名不用先改</strong>——存進電腦時會自動重新命名成{' '}
+              <span className="tnum">{productId}-1.jpg</span>、
+              <span className="tnum">{productId}-2.jpg</span> 這樣依序排下去。
             </div>
           </div>
           <label className="cursor-pointer border border-hairline px-4 py-2 text-[13px] hover:border-accent">
