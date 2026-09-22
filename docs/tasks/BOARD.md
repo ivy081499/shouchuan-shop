@@ -120,13 +120,40 @@
   採購需求 `getPurchasingReport()` **維持排除**棄用料（都棄用了不該再叫貨）。
   毛利報表本來就沒排除（從訂單回推配方成本），不受影響。
 
+- [ ] **新增 `customers` 表 + `orders.customer_id`** — 自建前台的會員功能
+  **尚未核准，動手前要先問店主。** 見 `docs/decisions/ADR-0012`。
+
+  ```
+  customers
+    id, google_sub（Google 使用者唯一 id，唯一索引）, email,
+    name, picture_url, created_at, updated_at
+
+  orders 增 customer_id（可為 null，null = 訪客下單）
+  ```
+
+  會員一律用 Google 登入、**不自建密碼**，所以不需要密碼相關欄位。
+  `customer_id` 必須允許 null——訪客不註冊也能下單，這是店主定的規則。
+
+  ⚠️ 這是**真正的 schema 變更，會產生 migration**，與上一筆（只改查詢條件）不同。
+  必須另開 schema session，且確認沒有其他工作流同時進行，避免污染 D1。
+
+  **只有前台階段 D 需要**。階段 A／B／C 都不依賴它，可以先做完再回來處理。
+
 ---
 
 ## 📦 套件需求
 
 > 需要 `npm install` 新套件的，寫在這裡，不要自己裝。
 
-（目前無）
+- [ ] **寄信服務 SDK（Resend 或同類）** — 自建前台階段 C
+  訂單確認信。**Cloudflare Workers 沒有 SMTP**，只能用 HTTP API 寄信。
+  MailChannels 2024 起對 Workers 收費，Email Routing 只能收不能發。
+  Resend 免費 3,000 封／月，足夠。需先申請帳號並驗證寄件網域。
+  見 `docs/decisions/ADR-0012`、`docs/10-前台與上架計畫.md`。
+
+- [ ] **Google OAuth id_token 驗證套件** — 自建前台階段 D
+  會員登入一律走 Google，不自建密碼。需要驗證 Google 回傳的 id_token 簽章。
+  手刻容易出錯，建議用現成套件。階段 D 才需要，C 之前不必裝。
 
 
 ---

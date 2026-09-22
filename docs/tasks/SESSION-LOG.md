@@ -12,6 +12,40 @@
 
 ---
 
+## 2026-09-22 — ⚠️ 範圍變更：改為自建前台（**只有規劃，未動程式**） — worktree-storefront-plan
+
+**做了什麼**
+- 店主決定**自建前台**，並指出後台上架功能殘缺、無法完整管理商品。
+- 寫 `ADR-0012`（取代 ADR-0008 的前台部分）與 `docs/10-前台與上架計畫.md`。
+- 更新 CLAUDE.md 的範圍說明（原本寫「本系統不做前台」，會誤導後續 session）。
+- 在 BOARD 登記 schema 變更請求與套件需求，**兩者都尚未核准、尚未執行**。
+
+**沒做完**
+- **一行程式都還沒寫。** 這次只產出規劃文件。
+
+**下一個人要知道**
+
+1. **店主定案的前台規則**（不要自己改）：
+   快速下單**不強迫註冊** → 下單成功後才問要不要加入會員 →
+   會員**一律 Google 登入、不自建密碼** → 下單成功**寄訂單確認信**。
+
+2. **先做階段 A（後台上架補完），不要先做前台。**
+   `products` 表有 11 個欄位，商品編輯器只能改 3 個——
+   `description`／`wrist_size_cm`／`manual_stock`／`sort_order` 全都碰不到，
+   `slug` 建立後也改不了。前台做出來也沒東西可顯示。
+
+3. **購物車與結帳不需要改 schema。** ADR-0008 當初刻意保留了
+   `cartSchema`、`CART_COOKIE_NAME`、`checkoutSchema`，現在都還在。
+   只有階段 D（會員）需要新增 `customers` 表與 `orders.customer_id`。
+
+4. **Cloudflare Workers 沒有 SMTP**，寄信只能用 HTTP API。
+   MailChannels 2024 起對 Workers 收費、Email Routing 只能收不能發，
+   目前評估用 Resend（免費 3,000 封／月）。已登記套件需求。
+
+5. **FreeStore 不要關掉。** 店主要並行一陣子，自建站穩定後才收。
+
+---
+
 ## 2026-09-22 — 棄用確認框 + 訂單當時用料查詢 — worktree-bead-retire
 
 **做了什麼**
