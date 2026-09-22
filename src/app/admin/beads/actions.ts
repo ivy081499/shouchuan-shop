@@ -1,8 +1,10 @@
 'use server'
 
 import { getDb } from '@/data/db'
-import { setBeadImage, updateBead, adjustStock, listCategories, getBeadById, isBeadInUse } from '@/data/beads'
+import { setBeadImage, updateBead, adjustStock, listCategories, getBeadById } from '@/data/beads'
 import { beadInputSchema } from '@/contracts/bead'
+import { recipes, products } from '@db/schema'
+import { eq, asc } from 'drizzle-orm'
 import { revalidatePath } from 'next/cache'
 
 /** 可接受的圖片格式與大小上限 */
@@ -153,12 +155,27 @@ export async function setBeadStock(beadId: number, targetQty: number, note?: str
  */
 export async function archiveBead(beadId: number, archived: boolean) {
   const db = await getDb()
-  const inUse = archived ? await isBeadInUse(db, beadId) : false
   await updateBead(db, beadId, { isArchived: archived })
   revalidatePath('/admin/inventory')
   revalidatePath('/admin/products')
   revalidatePath('/admin')
-  return { ok: true as const, inUse }
+  return { ok: true as const }
+}
+
+/**
+ * 棄用前的確認資訊：這顆料還被哪些手串的配方用著。
+ *
+ * 回傳名稱而非只有筆數——店主要看得出是哪幾條手串，才能判斷要不要棄用。
+ */
+export async function getBeadUsage(beadId: number) {
+  const db = await getDb()
+  const rows = await db
+    .select({ productId: products.id, productName: products.name, qty: recipes.qty })
+    .from(recipes)
+    .innerJoin(products, eq(recipes.productId, products.id))
+    .where(eq(recipes.beadId, beadId))
+    .orderBy(asc(products.name))
+  return rows
 }
 
 /** 現有分類清單，供編輯時的下拉選單 */

@@ -2,6 +2,7 @@ import { getDb } from '@/data/db'
 import { listOrders } from '@/data/orders'
 import { PageTitle, Table, Th, Td, Money, Empty } from '@/ui'
 import { ORDER_STATUS_LABEL, type OrderStatusValue } from '@/contracts/order'
+import OrderRow from './OrderRow.tsx'
 
 export const dynamic = 'force-dynamic'
 
@@ -17,7 +18,7 @@ export default async function OrdersPage() {
 
   return (
     <>
-      <PageTitle note="客戶訂單與收款狀態。目前前台在 FreeStore，訂單需從那邊匯入。">
+      <PageTitle note="客戶訂單與收款狀態。點一下任一筆訂單，可以看到當時用了哪些料、成本多少。">
         訂單
       </PageTitle>
 
@@ -40,7 +41,12 @@ export default async function OrdersPage() {
           </thead>
           <tbody>
             {orders.map((o) => (
-              <tr key={o.id}>
+              <OrderRow
+                key={o.id}
+                orderId={o.id}
+                stockDeducted={Boolean(o.stockDeducted)}
+                colSpan={6}
+              >
                 <Td>{o.orderNo}</Td>
                 <Td>{o.customerName}</Td>
                 <Td>{ORDER_STATUS_LABEL[o.status as OrderStatusValue]}</Td>
@@ -49,7 +55,7 @@ export default async function OrdersPage() {
                 </Td>
                 <Td numeric>{o.transferLast5 ?? '—'}</Td>
                 <Td>{formatDate(o.createdAt)}</Td>
-              </tr>
+              </OrderRow>
             ))}
           </tbody>
         </Table>
