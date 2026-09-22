@@ -43,7 +43,9 @@ export default async function ProductDetailPage({
       <Link href="/admin/products" className="mb-4 inline-block text-[13px] text-ink-soft hover:text-ink">
         ← 回手串列表
       </Link>
-      <PageTitle note="勾選這條手串用到的珠子，成本會自動算出來。">{product.name}</PageTitle>
+      <PageTitle note="改名稱、上傳照片、設定用哪些珠子，成本與毛利會自動算出來。">
+        {product.name}
+      </PageTitle>
 
       <RecipeEditor
         productId={product.id}

@@ -257,31 +257,35 @@ export default function RecipeEditor({
 
   const q = query.trim().toLowerCase()
 
+  /** 這顆珠子本身符不符合目前篩選條件（不含「已選一律顯示」的保護） */
+  function matchesFilters(b: BeadOption): boolean {
+    if (q) {
+      const hay = [b.name, b.sourceTitle, b.sourceSpec, b.category, b.supplierName]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase()
+      if (!hay.includes(q) && !(b.sizeMm !== null && String(b.sizeMm).includes(q))) return false
+    }
+    if (fCats.size > 0 && !fCats.has(b.category ?? UNCATEGORIZED)) return false
+    if (fSups.size > 0 && !fSups.has(b.supplierName ?? NO_SUPPLIER)) return false
+    if (!inRange(b.sizeMm, fSize)) return false
+    if (!inRange(b.unitCostCents / 100, fCost)) return false
+    if (!inRange(b.stockQty, fStock)) return false
+    if (inStockOnly && b.stockQty <= 0) return false
+    // 安全庫存為 0 代表不提醒，故要排除
+    if (lowStockOnly && !(b.reorderPoint > 0 && b.stockQty <= b.reorderPoint)) return false
+    return true
+  }
+
   const visibleBeads = useMemo(() => {
     const out = beads.filter((b) => {
+      if (selectedOnly) return used.has(b.id)
       /**
-       * 已勾選的珠子一律保留——否則篩選時會從畫面消失，
-       * 讓人以為配方被清掉了。「只看已選」本身就是要看這些，不受此保護影響。
+       * 已勾選的珠子即使不符條件也一律顯示——否則篩選時會從畫面消失，
+       * 讓人以為配方被清掉了。列表上會標「已選」讓店主知道它為何在這。
        */
-      if (used.has(b.id) && !selectedOnly) return true
-      if (selectedOnly && !used.has(b.id)) return false
-
-      if (q) {
-        const hay = [b.name, b.sourceTitle, b.sourceSpec, b.category, b.supplierName]
-          .filter(Boolean)
-          .join(' ')
-          .toLowerCase()
-        if (!hay.includes(q) && !(b.sizeMm !== null && String(b.sizeMm).includes(q))) return false
-      }
-      if (fCats.size > 0 && !fCats.has(b.category ?? UNCATEGORIZED)) return false
-      if (fSups.size > 0 && !fSups.has(b.supplierName ?? NO_SUPPLIER)) return false
-      if (!inRange(b.sizeMm, fSize)) return false
-      if (!inRange(b.unitCostCents / 100, fCost)) return false
-      if (!inRange(b.stockQty, fStock)) return false
-      if (inStockOnly && b.stockQty <= 0) return false
-      // 安全庫存為 0 代表不提醒，故要排除
-      if (lowStockOnly && !(b.reorderPoint > 0 && b.stockQty <= b.reorderPoint)) return false
-      return true
+      if (used.has(b.id)) return true
+      return matchesFilters(b)
     })
 
     const dir = sortAsc ? 1 : -1
@@ -703,6 +707,9 @@ export default function RecipeEditor({
                       const line = lines.find((l) => l.beadId === b.id)
                       const checked = used.has(b.id)
                       const low = b.reorderPoint > 0 && b.stockQty <= b.reorderPoint
+                      /** 不符目前篩選、純粹因為已選進配方才留在畫面上 */
+                      const keptBecauseSelected =
+                        checked && activeFilters > 0 && !selectedOnly && !matchesFilters(b)
                       return (
                         <li
                           key={b.id}
@@ -729,6 +736,14 @@ export default function RecipeEditor({
                             <input type="checkbox" checked={checked} onChange={() => toggle(b.id)} />
                             <span>{b.name}</span>
                             {b.sizeMm && <span className="tnum text-ink-soft">{b.sizeMm}mm</span>}
+                            {keptBecauseSelected && (
+                              <span
+                                title="不符目前的篩選條件，但因為已選進配方所以保留顯示"
+                                className="border border-hairline px-1.5 py-0.5 text-[11px] text-ink-soft"
+                              >
+                                已選
+                              </span>
+                            )}
                           </label>
                           <span className="tnum w-24 text-right text-ink-soft">
                             {formatTWD(b.unitCostCents, true)}
