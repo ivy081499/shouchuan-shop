@@ -24,7 +24,9 @@ export default async function ProductDetailPage({
 
   const [recipe, beads, images, imageBase] = await Promise.all([
     getRecipe(db, productId),
-    listBeads(db),
+    // 連棄用的一起撈：已寫進這條配方的棄用料必須照樣顯示，
+    // 否則配方會看起來被清空。未使用的棄用料由 RecipeEditor 濾掉。
+    listBeads(db, { includeArchived: true }),
     listProductImagesAction(productId),
     getPublicImageBase(),
   ])
@@ -65,6 +67,7 @@ export default async function ProductDetailPage({
           supplierName: b.supplierName,
           sourceTitle: b.sourceTitle,
           sourceSpec: b.sourceSpec,
+          isArchived: b.isArchived,
         }))}
         initialLines={recipe.map((r) => ({ beadId: r.beadId, qty: r.qty }))}
       />

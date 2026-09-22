@@ -13,17 +13,20 @@ export const dynamic = 'force-dynamic'
 export default async function InventoryPage() {
   const db = await getDb()
   const [beads, categories, fxRows, totals] = await Promise.all([
-    listBeads(db),
+    // 連棄用的一起撈，由表格的「已棄用」篩選決定顯示哪些
+    listBeads(db, { includeArchived: true }),
     listCategories(db),
     db.select().from(settings).where(eq(settings.key, 'default_fx_rate_x100')).limit(1),
     getPurchaseTotals(db),
   ])
   const fx = Number.parseInt(fxRows[0]?.value ?? '450', 10)
 
-  const totalQty = beads.reduce((s, b) => s + b.stockQty, 0)
+  /** 上方統計只看還在用的料；棄用的不列入品項數與補貨提醒 */
+  const active = beads.filter((b) => !b.isArchived)
+  const totalQty = active.reduce((s, b) => s + b.stockQty, 0)
   // 安全庫存為 0 代表不提醒，要排除
-  const lowStock = beads.filter((b) => b.reorderPoint > 0 && b.stockQty <= b.reorderPoint)
-  const hasReorderPoint = beads.some((b) => b.reorderPoint > 0)
+  const lowStock = active.filter((b) => b.reorderPoint > 0 && b.stockQty <= b.reorderPoint)
+  const hasReorderPoint = active.some((b) => b.reorderPoint > 0)
 
   const list =
     beads.length === 0 ? (
@@ -47,6 +50,7 @@ export default async function InventoryPage() {
           sourceTitle: b.sourceTitle,
           sourceSpec: b.sourceSpec,
           sourceUrl: b.sourceUrl,
+          isArchived: b.isArchived,
         }))}
       />
     )
@@ -60,7 +64,7 @@ export default async function InventoryPage() {
       <div className="mb-8 grid grid-cols-2 gap-4 sm:grid-cols-4">
         <Stat
           label="品項"
-          value={beads.length}
+          value={active.length}
           hint="不含已封存"
           explain="目前有幾種不同的珠子。同一種珠子不論進貨幾次都只算一種。"
         />

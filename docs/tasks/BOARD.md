@@ -109,6 +109,17 @@
   一批貨（多張淘寶訂單合併清關）收一次關稅，需要一個群組層級掛關稅金額。
   `purchase_items` 增 `duty_share_twd_cents` 記錄各列攤得的關稅。
 
+- [x] **庫存報表納入已棄用的珠子** — 棄用料需求
+  店主 2026-09-22 明確核准（「把 schema session 這件事一起處理好」），
+  於 `worktree-bead-retire` 分支執行。
+  **未改 `db/schema.ts`、未改 `src/contracts/**`、未產生 migration**——
+  `beads.is_archived` 欄位 Phase 0 就存在，本次只改凍結檔 `src/data/reports.ts`
+  中 `getInventoryReport()` 的一行查詢條件（移除 `is_archived = false`）。
+  理由：棄用代表「不再拿來做手串」，但料還在手上、錢已經花了，
+  庫存價值必須照列，否則總覽頁的庫存總值會短少。
+  採購需求 `getPurchasingReport()` **維持排除**棄用料（都棄用了不該再叫貨）。
+  毛利報表本來就沒排除（從訂單回推配方成本），不受影響。
+
 ---
 
 ## 📦 套件需求

@@ -22,6 +22,8 @@ export interface BeadOption {
   supplierName: string | null
   sourceTitle: string | null
   sourceSpec: string | null
+  /** 已棄用：不再選用。已寫進配方的仍會顯示並標示，提醒換料 */
+  isArchived: boolean
 }
 
 interface Line {
@@ -89,7 +91,7 @@ export default function RecipeEditor({
   priceCents,
   status,
   images,
-  beads,
+  beads: allBeads,
   initialLines,
 }: {
   productId: number
@@ -163,8 +165,15 @@ export default function RecipeEditor({
     }
   }, [imgSize])
 
-  const byId = new Map(beads.map((b) => [b.id, b]))
+  const byId = new Map(allBeads.map((b) => [b.id, b]))
   const used = new Set(lines.map((l) => l.beadId))
+
+  /**
+   * 可選的料：棄用的不出現在清單裡。
+   * 例外是已經寫進這條配方的——那些要留著顯示並標「已棄用」，
+   * 否則配方會看起來被清空，店主也無從得知該換料。
+   */
+  const beads = allBeads.filter((b) => !b.isArchived || used.has(b.id))
 
   const recipeForCost = lines
     .map((l) => {
@@ -839,7 +848,15 @@ export default function RecipeEditor({
                             <input type="checkbox" checked={checked} onChange={() => toggle(b.id)} />
                             <span>{b.name}</span>
                             {b.sizeMm && <span className="tnum text-ink-soft">{b.sizeMm}mm</span>}
-                            {keptBecauseSelected && (
+                            {b.isArchived && (
+                              <span
+                                title="這顆料已棄用，只因為還在這條配方裡才顯示。建議找時間換掉。"
+                                className="border border-alert px-1.5 py-0.5 text-[11px] text-alert"
+                              >
+                                已棄用
+                              </span>
+                            )}
+                            {keptBecauseSelected && !b.isArchived && (
                               <span
                                 title="不符目前的篩選條件，但因為已選進配方所以保留顯示"
                                 className="border border-hairline px-1.5 py-0.5 text-[11px] text-ink-soft"

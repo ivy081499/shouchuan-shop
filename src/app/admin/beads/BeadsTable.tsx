@@ -12,6 +12,7 @@ import {
 import BeadImageCell from './BeadImageCell.tsx'
 import EditableCell from './EditableCell.tsx'
 import StockCell from './StockCell.tsx'
+import RetireCell from './RetireCell.tsx'
 
 export interface BeadRow {
   id: number
@@ -27,6 +28,8 @@ export interface BeadRow {
   sourceTitle: string | null
   sourceSpec: string | null
   sourceUrl: string | null
+  /** 已棄用：不再拿來做手串，但庫存價值仍計入報表 */
+  isArchived: boolean
 }
 
 const SIZE_KEY = 'beads.imageSize'
@@ -50,6 +53,7 @@ const COLUMNS: Column[] = [
   { key: 'stockValue', label: '庫存值', width: 90, align: 'right' },
   { key: 'supplierName', label: '供應商', width: 140 },
   { key: 'sourceUrl', label: '商品連結', width: 90 },
+  { key: 'retire', label: '棄用', width: 80 },
 ]
 const UNCATEGORIZED = '（未分類）'
 const NO_SUPPLIER = '（無供應商）'
@@ -83,6 +87,8 @@ export default function BeadsTable({
 
   const [sortKey, setSortKey] = useState<SortKey>('name')
   const [sortAsc, setSortAsc] = useState(true)
+  /** 棄用料的檢視方式：預設只看還在用的 */
+  const [retireView, setRetireView] = useState<'active' | 'retired' | 'all'>('active')
   const { widths, persist, reset } = useColumnWidths('beads', COLUMNS)
   const { hidden, toggle, visible } = useColumnVisibility('beads', COLUMNS)
 
@@ -165,9 +171,13 @@ export default function BeadsTable({
     return true
   }
 
+  const retiredCount = beads.filter((b) => b.isArchived).length
+
   const rows = useMemo(() => {
     const nameQ = fName.trim().toLowerCase()
     const out = beads.filter((b) => {
+      if (retireView === 'active' && b.isArchived) return false
+      if (retireView === 'retired' && !b.isArchived) return false
       if (
         nameQ &&
         !b.name.toLowerCase().includes(nameQ) &&
@@ -198,7 +208,7 @@ export default function BeadsTable({
       if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * dir
       return String(va).localeCompare(String(vb), 'zh-Hant') * dir
     })
-  }, [beads, fName, fCats, fSups, fSize, fCost, fStock, fReorder, sortKey, sortAsc])
+  }, [beads, retireView, fName, fCats, fSups, fSize, fCost, fStock, fReorder, sortKey, sortAsc])
 
   const activeCount =
     (fName.trim() ? 1 : 0) +
@@ -321,8 +331,32 @@ export default function BeadsTable({
       <div className="mb-5 border border-hairline">
         <div className="flex flex-wrap items-center gap-3 border-b border-hairline bg-sunk px-4 py-2.5">
           <span className="text-[13px] text-ink">篩選</span>
+
+          {/* 棄用檢視切換。棄用的料仍算庫存價值，只是不再拿來做手串 */}
+          <div className="flex border border-hairline text-[12px]">
+            {(
+              [
+                ['active', '使用中'],
+                ['retired', `已棄用${retiredCount > 0 ? ` ${retiredCount}` : ''}`],
+                ['all', '全部'],
+              ] as const
+            ).map(([k, label], i) => (
+              <button
+                key={k}
+                type="button"
+                onClick={() => setRetireView(k)}
+                aria-pressed={retireView === k}
+                className={`px-3 py-1 transition ${i > 0 ? 'border-l border-hairline' : ''} ${
+                  retireView === k ? 'bg-ink text-paper' : 'text-ink-soft hover:text-ink'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
           <span className="text-[12px] text-ink-soft">
-            {activeCount > 0 ? `${activeCount} 個條件，符合 ${rows.length} 種` : `共 ${beads.length} 種`}
+            {activeCount > 0 ? `${activeCount} 個條件，符合 ${rows.length} 種` : `${rows.length} 種`}
           </span>
           {activeCount > 0 && (
             <button
@@ -507,8 +541,9 @@ export default function BeadsTable({
             <tbody>
               {pageRows.map((b) => {
                 const isLow = b.reorderPoint > 0 && b.stockQty <= b.reorderPoint
+                // 棄用的列淡化顯示，一眼看得出它不在選料清單裡
                 return (
-                  <tr key={b.id} className="group/row">
+                  <tr key={b.id} className={`group/row ${b.isArchived ? 'opacity-45' : ''}`}>
                     {visible.map((c) => {
                       const cls = `relative border-b border-hairline py-2.5 pr-3 align-middle ${
                         c.align === 'right' ? 'text-right tnum' : 'text-left'
@@ -642,6 +677,17 @@ export default function BeadsTable({
                               ) : (
                                 <span className="text-ink-soft">—</span>
                               )}
+                              {grip}
+                            </td>
+                          )
+                        case 'retire':
+                          return (
+                            <td key={c.key} className={cls}>
+                              <RetireCell
+                                beadId={b.id}
+                                beadName={b.name}
+                                isArchived={b.isArchived}
+                              />
                               {grip}
                             </td>
                           )

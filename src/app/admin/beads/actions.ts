@@ -1,7 +1,7 @@
 'use server'
 
 import { getDb } from '@/data/db'
-import { setBeadImage, updateBead, adjustStock, listCategories, getBeadById } from '@/data/beads'
+import { setBeadImage, updateBead, adjustStock, listCategories, getBeadById, isBeadInUse } from '@/data/beads'
 import { beadInputSchema } from '@/contracts/bead'
 import { revalidatePath } from 'next/cache'
 
@@ -142,15 +142,23 @@ export async function setBeadStock(beadId: number, targetQty: number, note?: str
 }
 
 /**
- * 封存珠子（不是刪除）。
- * 歷史配方仍需保留這筆資料，故外鍵為 restrict，只能封存。
+ * 棄用／復原珠子（不是刪除）。
+ *
+ * 棄用＝不再拿來做新手串、採購需求不再提示補貨，
+ * 但**庫存價值與歷史成本照算**（料還在手上、錢已經花了）。
+ * 歷史配方仍需保留這筆資料，故外鍵為 restrict，只能棄用不能刪。
+ *
+ * 被配方使用中的珠子照樣可棄用，只回報 `inUse` 讓畫面提醒店主找時間換料——
+ * 不擅自從配方移除，那會無聲改掉既有手串的成本。
  */
 export async function archiveBead(beadId: number, archived: boolean) {
   const db = await getDb()
-  // 被配方使用中的珠子照樣可封存——封存只代表不再進貨，不影響既有配方
+  const inUse = archived ? await isBeadInUse(db, beadId) : false
   await updateBead(db, beadId, { isArchived: archived })
   revalidatePath('/admin/inventory')
-  return { ok: true as const }
+  revalidatePath('/admin/products')
+  revalidatePath('/admin')
+  return { ok: true as const, inUse }
 }
 
 /** 現有分類清單，供編輯時的下拉選單 */

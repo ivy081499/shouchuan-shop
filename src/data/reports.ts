@@ -4,6 +4,11 @@
  *
  * 三張報表：採購需求、毛利、庫存概況。
  * 計算一律呼叫 src/lib/costing.ts，不在這裡另寫公式。
+ *
+ * 例外紀錄：2026-09-22 經店主核准，`getInventoryReport()` 改為納入已棄用的珠子
+ * （見 BOARD「SCHEMA 變更請求」）。棄用只代表不再拿來做手串，
+ * 料還在手上、錢已經花了，庫存價值必須照列。
+ * 採購需求維持排除棄用料——都棄用了不該再叫貨。
  */
 
 import { eq, and, inArray, asc, desc, gte, lte, sql } from 'drizzle-orm'
@@ -221,16 +226,18 @@ export async function getInventoryReport(db: Db): Promise<InventoryReport> {
       reorderPoint: beads.reorderPoint,
       unitCostCents: beads.unitCostCents,
       supplierName: suppliers.name,
+      isArchived: beads.isArchived,
     })
     .from(beads)
     .leftJoin(suppliers, eq(beads.supplierId, suppliers.id))
-    .where(eq(beads.isArchived, false))
+    // 棄用的珠子也要算——料還在手上、錢已經花了，庫存價值不能憑空消失
     .orderBy(asc(beads.name))
 
-  const lines: InventoryLine[] = rows.map((r) => ({
+  const lines: InventoryLine[] = rows.map(({ isArchived, ...r }) => ({
     ...r,
     stockValueCents: r.stockQty * r.unitCostCents,
-    isLow: r.reorderPoint > 0 && r.stockQty <= r.reorderPoint,
+    // 棄用的不再補貨，就不該觸發補貨提醒
+    isLow: !isArchived && r.reorderPoint > 0 && r.stockQty <= r.reorderPoint,
   }))
 
   return {
