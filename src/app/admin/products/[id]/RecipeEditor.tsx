@@ -1,7 +1,12 @@
 'use client'
 
-import { useState, useTransition } from 'react'
-import { saveRecipeAction, updateProductAction } from '../actions.ts'
+import { useRef, useState, useTransition } from 'react'
+import {
+  saveRecipeAction,
+  updateProductAction,
+  uploadProductImages,
+  deleteProductImageAction,
+} from '../actions.ts'
 import { formatTWD, yuanToCents } from '@/lib/money'
 import { calcProductCost, calcMargin, calcBuildableQty } from '@/lib/costing'
 
@@ -20,11 +25,18 @@ interface Line {
   qty: number
 }
 
+export interface ProductPhoto {
+  id: number
+  url: string
+  sortOrder: number
+}
+
 export default function RecipeEditor({
   productId,
   productName,
   priceCents,
   status,
+  images,
   beads,
   initialLines,
 }: {
@@ -32,12 +44,17 @@ export default function RecipeEditor({
   productName: string
   priceCents: number
   status: string
+  images: ProductPhoto[]
   beads: BeadOption[]
   initialLines: Line[]
 }) {
   const [lines, setLines] = useState<Line[]>(initialLines)
   const [price, setPrice] = useState(String(priceCents / 100))
   const [currentStatus, setCurrentStatus] = useState(status)
+  const [name, setName] = useState(productName)
+  const [photos, setPhotos] = useState<ProductPhoto[]>(images)
+  const [uploading, setUploading] = useState(false)
+  const fileInput = useRef<HTMLInputElement>(null)
 
   /**
    * 上次儲存的內容，供「重設」還原。
@@ -48,6 +65,7 @@ export default function RecipeEditor({
     lines: initialLines,
     price: String(priceCents / 100),
     status,
+    name: productName,
   })
   const [query, setQuery] = useState('')
   const [zoom, setZoom] = useState<{ url: string; name: string } | null>(null)
@@ -93,6 +111,7 @@ export default function RecipeEditor({
     setLines(saved.lines)
     setPrice(saved.price)
     setCurrentStatus(saved.status)
+    setName(saved.name)
     setError(null)
     setMsg(null)
     setZoom(null)
@@ -102,6 +121,7 @@ export default function RecipeEditor({
   const dirty =
     price !== saved.price ||
     currentStatus !== saved.status ||
+    name !== saved.name ||
     lines.length !== saved.lines.length ||
     lines.some((l) => {
       const s = saved.lines.find((x) => x.beadId === l.beadId)
@@ -111,6 +131,10 @@ export default function RecipeEditor({
   function save() {
     setError(null)
     setMsg(null)
+    if (name.trim() === '') {
+      setError('請填寫手串名稱。')
+      return
+    }
     startTransition(async () => {
       const r1 = await saveRecipeAction(
         productId,
@@ -121,6 +145,7 @@ export default function RecipeEditor({
         return
       }
       const r2 = await updateProductAction(productId, {
+        name: name.trim(),
         priceCents: yuanToCents(price),
         status: currentStatus,
       })
@@ -128,8 +153,43 @@ export default function RecipeEditor({
         setError(r2.error)
         return
       }
-      setSaved({ lines, price, status: currentStatus })
+      setSaved({ lines, price, status: currentStatus, name: name.trim() })
+      setName(name.trim())
       setMsg('已儲存')
+    })
+  }
+
+  /** 上傳照片。可一次選多張，檔名依商品 id 與序號自動產生。 */
+  function upload(files: FileList | null) {
+    if (!files || files.length === 0) return
+    setError(null)
+    setMsg(null)
+    setUploading(true)
+    const fd = new FormData()
+    for (const f of Array.from(files)) fd.append('files', f)
+    startTransition(async () => {
+      const r = await uploadProductImages(productId, fd)
+      if (!r.ok) {
+        setError(r.error)
+      } else {
+        // 重新載入才拿得到新照片的 id 與網址
+        setMsg(`已上傳 ${r.count} 張照片`)
+        window.location.reload()
+        return
+      }
+      setUploading(false)
+      if (fileInput.current) fileInput.current.value = ''
+    })
+  }
+
+  function removePhoto(imageId: number) {
+    setError(null)
+    setMsg(null)
+    startTransition(async () => {
+      const r = await deleteProductImageAction(productId, imageId)
+      if (!r.ok) return
+      setPhotos((ps) => ps.filter((p) => p.id !== imageId))
+      setMsg('已移除照片（檔案仍留在電腦上）')
     })
   }
 
@@ -152,6 +212,75 @@ export default function RecipeEditor({
 
   return (
     <>
+      <div className="mb-8 border border-hairline px-5 py-4">
+        <label className="block text-[11px] tracking-[0.15em] text-ink-soft">手串名稱</label>
+        <input
+          type="text"
+          value={name}
+          maxLength={100}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="例：桃花手串"
+          className="mt-1.5 w-full border-b border-hairline bg-transparent py-1 text-xl focus:border-accent focus:outline-none"
+        />
+        <div className="mt-1 text-[12px] text-ink-soft">改完按下方「儲存」才會生效。</div>
+      </div>
+
+      <div className="mb-8 border border-hairline px-5 py-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <div className="text-[11px] tracking-[0.15em] text-ink-soft">商品照片</div>
+            <div className="mt-1 text-[12px] text-ink-soft">
+              可一次選多張。存成 <span className="tnum">手串編號-序號</span>，
+              例：<span className="tnum">{productId}-1.jpg</span>；同名檔案直接覆蓋。
+            </div>
+          </div>
+          <label className="cursor-pointer border border-hairline px-4 py-2 text-[13px] hover:border-accent">
+            {uploading ? '上傳中…' : '選擇照片'}
+            <input
+              ref={fileInput}
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              multiple
+              disabled={uploading || pending}
+              onChange={(e) => upload(e.target.files)}
+              className="hidden"
+            />
+          </label>
+        </div>
+
+        {photos.length === 0 ? (
+          <div className="mt-4 text-[13px] text-ink-soft">還沒有照片。</div>
+        ) : (
+          <div className="mt-4 flex flex-wrap gap-3">
+            {photos.map((p) => (
+              <div key={p.id} className="w-28">
+                <button
+                  type="button"
+                  onClick={() => setZoom({ url: p.url, name: `${name}（${p.sortOrder}）` })}
+                  className="block w-28 border border-hairline"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={p.url} alt="" className="h-28 w-28 object-cover" />
+                </button>
+                <div className="mt-1 flex items-center justify-between text-[12px]">
+                  <span className="tnum text-ink-soft">
+                    {productId}-{p.sortOrder}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => removePhoto(p.id)}
+                    disabled={pending}
+                    className="text-ink-soft hover:text-alert"
+                  >
+                    移除
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
       <div className="mb-8 grid gap-4 sm:grid-cols-4">
         <div className="border border-hairline px-5 py-4">
           <div className="text-[11px] tracking-[0.15em] text-ink-soft">材料成本</div>

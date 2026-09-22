@@ -12,6 +12,38 @@
 
 ---
 
+## 2026-09-22 — 手串名稱可編輯 + 商品照片上傳 — worktree-product-name-photos
+
+**做了什麼**
+- 手串詳情頁加「手串名稱」輸入欄，跟售價／狀態一起按「儲存」才生效，
+  也納入 dirty 判斷與「重設」還原。`updateProductAction` 原本就收 name，未改 action 簽名。
+- 加商品照片上傳：一次可選多張，本機寫 `public/uploads/products/`，線上寫 R2，
+  機制照抄 `src/app/admin/beads/actions.ts`（`isLocalDev()` 分歧）。
+- **命名規則**：`products/{商品id}-{序號}.{副檔名}`，序號自 1 起算，接在現有最大序號之後。
+  同名檔案直接覆寫（店主指定行為）。
+- 照片可逐張移除——**只刪資料庫紀錄，磁碟檔案留著**，與珠子圖一致，避免誤刪救不回。
+
+**沒做完**
+- 照片排序無法拖曳調整，目前固定照上傳序號。
+- 移除照片後序號不回收，下次上傳仍從最大序號往後接（不會覆蓋到還在用的照片）。
+
+**下一個人要知道**
+
+1. **沒有改 schema。** `product_images` 表 Phase 0 就存在，`addProductImage`／`deleteProductImage`
+   也早就寫好在 `src/data/products.ts`。該檔是凍結檔，**列出照片的查詢寫在 action 裡**
+   （`listProductImagesAction`），不是加到 data 層——因為不能改凍結檔。
+
+2. **本機圖片網址要補 `/uploads` 前綴。** 沒有 `.env`，`getPublicImageBase()` 回空字串，
+   `imageUrl()` 會組出 `/products/2-1.png`，但檔案實際在 `public/uploads/products/`。
+   詳情頁的 `toUrl()` 已處理這個分歧，之後若在別處顯示商品圖要留意同一件事。
+
+3. **上傳後用 `window.location.reload()` 重載。** 因為新照片的 id 與網址要回頭查資料庫才拿得到。
+   不算漂亮，但比自己維護一份樂觀更新狀態不容易出錯。
+
+4. 測試用自建的 1x1 PNG 與 worktree 內複製的資料庫，**沒碰店主正式資料**，測完已清乾淨。
+
+---
+
 ## 2026-09-11 — ⚠️ 範圍變更：前台改用 FreeStore — 主控 session
 
 **做了什麼**
