@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useState, useTransition } from 'react'
+import { useMemo, useRef, useState, useTransition } from 'react'
 import {
   saveRecipeAction,
   updateProductAction,
@@ -16,8 +16,12 @@ export interface BeadOption {
   sizeMm: number | null
   unitCostCents: number
   stockQty: number
+  reorderPoint: number
   category: string | null
   imageUrl: string | null
+  supplierName: string | null
+  sourceTitle: string | null
+  sourceSpec: string | null
 }
 
 interface Line {
@@ -29,6 +33,36 @@ export interface ProductPhoto {
   id: number
   url: string
   sortOrder: number
+}
+
+/** 數值區間篩選條件 */
+interface Range {
+  min: string
+  max: string
+}
+
+const EMPTY_RANGE: Range = { min: '', max: '' }
+
+const UNCATEGORIZED = '未分類'
+const NO_SUPPLIER = '未指定'
+
+type SortKey = 'name' | 'sizeMm' | 'unitCostCents' | 'stockQty'
+
+const SORT_LABEL: Record<SortKey, string> = {
+  name: '名稱',
+  sizeMm: '尺寸',
+  unitCostCents: '單顆成本',
+  stockQty: '庫存',
+}
+
+/** 數值落在區間內？欄位留白代表不限 */
+function inRange(value: number | null, r: Range): boolean {
+  if (value === null) return !r.min.trim() && !r.max.trim()
+  const min = r.min.trim() === '' ? null : Number(r.min)
+  const max = r.max.trim() === '' ? null : Number(r.max)
+  if (min !== null && Number.isFinite(min) && value < min) return false
+  if (max !== null && Number.isFinite(max) && value > max) return false
+  return true
 }
 
 export default function RecipeEditor({
@@ -67,7 +101,22 @@ export default function RecipeEditor({
     status,
     name: productName,
   })
+
+  /* ── 選料的篩選條件 ── */
   const [query, setQuery] = useState('')
+  const [fCats, setFCats] = useState<Set<string>>(new Set())
+  const [fSups, setFSups] = useState<Set<string>>(new Set())
+  const [fSize, setFSize] = useState<Range>(EMPTY_RANGE)
+  const [fCost, setFCost] = useState<Range>(EMPTY_RANGE)
+  const [fStock, setFStock] = useState<Range>(EMPTY_RANGE)
+  const [inStockOnly, setInStockOnly] = useState(false)
+  const [lowStockOnly, setLowStockOnly] = useState(false)
+  const [selectedOnly, setSelectedOnly] = useState(false)
+  const [sortKey, setSortKey] = useState<SortKey>('name')
+  const [sortAsc, setSortAsc] = useState(true)
+  /** 篩選列預設收合，免得珠子列表被擠到畫面外 */
+  const [filterOpen, setFilterOpen] = useState(false)
+
   const [zoom, setZoom] = useState<{ url: string; name: string } | null>(null)
   const [msg, setMsg] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -93,6 +142,8 @@ export default function RecipeEditor({
       })
       .filter((x): x is { qty: number; stockQty: number } => x !== null),
   )
+
+  const totalBeadCount = lines.reduce((sum, l) => sum + l.qty, 0)
 
   function toggle(beadId: number) {
     setLines((ls) =>
@@ -159,7 +210,7 @@ export default function RecipeEditor({
     })
   }
 
-  /** 上傳照片。可一次選多張，檔名依商品 id 與序號自動產生。 */
+  /** 上傳照片。原始檔名不影響存檔，一律由後端依商品 id 與序號重新命名。 */
   function upload(files: FileList | null) {
     if (!files || files.length === 0) return
     setError(null)
@@ -193,271 +244,554 @@ export default function RecipeEditor({
     })
   }
 
-  /**
-   * 搜尋過濾。已勾選的珠子一律保留——否則搜尋時會從畫面消失，
-   * 讓人以為配方被清掉了。
-   */
-  const q = query.trim().toLowerCase()
-  const visibleBeads = q
-    ? beads.filter(
-        (b) =>
-          used.has(b.id) ||
-          b.name.toLowerCase().includes(q) ||
-          (b.sizeMm !== null && String(b.sizeMm).includes(q)) ||
-          (b.category ?? '').toLowerCase().includes(q),
-      )
-    : beads
+  /* ── 選料清單的篩選與排序 ── */
 
-  const categories = [...new Set(visibleBeads.map((b) => b.category ?? '未分類'))].sort()
+  const categoryOptions = useMemo(
+    () => [...new Set(beads.map((b) => b.category ?? UNCATEGORIZED))].sort(),
+    [beads],
+  )
+  const supplierOptions = useMemo(
+    () => [...new Set(beads.map((b) => b.supplierName ?? NO_SUPPLIER))].sort(),
+    [beads],
+  )
+
+  const q = query.trim().toLowerCase()
+
+  const visibleBeads = useMemo(() => {
+    const out = beads.filter((b) => {
+      /**
+       * 已勾選的珠子一律保留——否則篩選時會從畫面消失，
+       * 讓人以為配方被清掉了。「只看已選」本身就是要看這些，不受此保護影響。
+       */
+      if (used.has(b.id) && !selectedOnly) return true
+      if (selectedOnly && !used.has(b.id)) return false
+
+      if (q) {
+        const hay = [b.name, b.sourceTitle, b.sourceSpec, b.category, b.supplierName]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase()
+        if (!hay.includes(q) && !(b.sizeMm !== null && String(b.sizeMm).includes(q))) return false
+      }
+      if (fCats.size > 0 && !fCats.has(b.category ?? UNCATEGORIZED)) return false
+      if (fSups.size > 0 && !fSups.has(b.supplierName ?? NO_SUPPLIER)) return false
+      if (!inRange(b.sizeMm, fSize)) return false
+      if (!inRange(b.unitCostCents / 100, fCost)) return false
+      if (!inRange(b.stockQty, fStock)) return false
+      if (inStockOnly && b.stockQty <= 0) return false
+      // 安全庫存為 0 代表不提醒，故要排除
+      if (lowStockOnly && !(b.reorderPoint > 0 && b.stockQty <= b.reorderPoint)) return false
+      return true
+    })
+
+    const dir = sortAsc ? 1 : -1
+    return [...out].sort((a, b) => {
+      const av = a[sortKey]
+      const bv = b[sortKey]
+      if (av === null) return 1
+      if (bv === null) return -1
+      if (typeof av === 'string' && typeof bv === 'string') return av.localeCompare(bv, 'zh-Hant') * dir
+      return ((av as number) - (bv as number)) * dir
+    })
+  }, [
+    beads, used, q, fCats, fSups, fSize, fCost, fStock,
+    inStockOnly, lowStockOnly, selectedOnly, sortKey, sortAsc,
+  ])
+
+  /** 有幾個篩選條件生效——收合時也要讓店主知道正在篩 */
+  const activeFilters =
+    (q ? 1 : 0) +
+    fCats.size +
+    fSups.size +
+    [fSize, fCost, fStock].filter((r) => r.min.trim() || r.max.trim()).length +
+    (inStockOnly ? 1 : 0) +
+    (lowStockOnly ? 1 : 0) +
+    (selectedOnly ? 1 : 0)
+
+  function clearFilters() {
+    setQuery('')
+    setFCats(new Set())
+    setFSups(new Set())
+    setFSize(EMPTY_RANGE)
+    setFCost(EMPTY_RANGE)
+    setFStock(EMPTY_RANGE)
+    setInStockOnly(false)
+    setLowStockOnly(false)
+    setSelectedOnly(false)
+  }
+
+  function toggleSet(set: Set<string>, value: string, apply: (s: Set<string>) => void) {
+    const next = new Set(set)
+    if (next.has(value)) next.delete(value)
+    else next.add(value)
+    apply(next)
+  }
+
+  const categories = [...new Set(visibleBeads.map((b) => b.category ?? UNCATEGORIZED))].sort()
+
+  /** 數值範圍輸入 */
+  function RangeInput({ value, onChange }: { value: Range; onChange: (r: Range) => void }) {
+    return (
+      <div className="flex items-center gap-1">
+        <input
+          value={value.min}
+          onChange={(e) => onChange({ ...value, min: e.target.value })}
+          placeholder="不限"
+          inputMode="decimal"
+          className="w-16 border-b border-hairline bg-transparent py-0.5 text-right text-[12px] tnum focus:border-accent focus:outline-none"
+        />
+        <span className="text-[11px] text-ink-soft">–</span>
+        <input
+          value={value.max}
+          onChange={(e) => onChange({ ...value, max: e.target.value })}
+          placeholder="不限"
+          inputMode="decimal"
+          className="w-16 border-b border-hairline bg-transparent py-0.5 text-right text-[12px] tnum focus:border-accent focus:outline-none"
+        />
+      </div>
+    )
+  }
+
+  /** 多選籤 */
+  function ChipGroup({
+    options,
+    selected,
+    onToggle,
+  }: {
+    options: string[]
+    selected: Set<string>
+    onToggle: (v: string) => void
+  }) {
+    return (
+      <div className="flex flex-wrap gap-1">
+        {options.map((o) => {
+          const on = selected.has(o)
+          return (
+            <button
+              key={o}
+              type="button"
+              onClick={() => onToggle(o)}
+              aria-pressed={on}
+              className={`border px-2 py-0.5 text-[12px] transition ${
+                on ? 'border-ink bg-ink text-paper' : 'border-hairline text-ink-soft hover:border-accent hover:text-ink'
+              }`}
+            >
+              {o}
+            </button>
+          )
+        })}
+      </div>
+    )
+  }
 
   return (
     <>
-      <div className="mb-8 border border-hairline px-5 py-4">
-        <label className="block text-[11px] tracking-[0.15em] text-ink-soft">手串名稱</label>
-        <input
-          type="text"
-          value={name}
-          maxLength={100}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="例：桃花手串"
-          className="mt-1.5 w-full border-b border-hairline bg-transparent py-1 text-xl focus:border-accent focus:outline-none"
-        />
-        <div className="mt-1 text-[12px] text-ink-soft">改完按下方「儲存」才會生效。</div>
-      </div>
+      {/* ── 基本資料：名稱、售價、狀態、照片收在同一張卡 ── */}
+      <section className="mb-6 border border-hairline">
+        <h2 className="border-b border-hairline px-5 py-2.5 text-[11px] tracking-[0.15em] text-ink-soft">
+          基本資料
+        </h2>
 
-      <div className="mb-8 border border-hairline px-5 py-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <div className="text-[11px] tracking-[0.15em] text-ink-soft">商品照片</div>
-            <div className="mt-1 text-[12px] text-ink-soft">
-              可一次選多張，<strong>檔名不用先改</strong>——存進電腦時會自動重新命名成{' '}
-              <span className="tnum">{productId}-1.jpg</span>、
-              <span className="tnum">{productId}-2.jpg</span> 這樣依序排下去。
-            </div>
-          </div>
-          <label className="cursor-pointer border border-hairline px-4 py-2 text-[13px] hover:border-accent">
-            {uploading ? '上傳中…' : '選擇照片'}
+        <div className="grid gap-x-6 gap-y-4 px-5 py-4 sm:grid-cols-2 lg:grid-cols-4">
+          <label className="text-[12px] lg:col-span-2">
+            <span className="block text-ink-soft">手串名稱</span>
             <input
-              ref={fileInput}
-              type="file"
-              accept="image/jpeg,image/png,image/webp"
-              multiple
-              disabled={uploading || pending}
-              onChange={(e) => upload(e.target.files)}
-              className="hidden"
+              type="text"
+              value={name}
+              maxLength={100}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="例：桃花手串"
+              className="mt-1 w-full border-b border-hairline bg-transparent py-1 text-[15px] focus:border-accent focus:outline-none"
             />
+          </label>
+
+          <label className="text-[12px]">
+            <span className="block text-ink-soft">售價 NT$</span>
+            <input
+              type="number"
+              value={price}
+              onChange={(e) => setPrice(e.target.value)}
+              className="mt-1 w-full border-b border-hairline bg-transparent py-1 tnum text-[15px] focus:border-accent focus:outline-none"
+            />
+          </label>
+
+          <label className="text-[12px]">
+            <span className="block text-ink-soft">狀態</span>
+            <select
+              value={currentStatus}
+              onChange={(e) => setCurrentStatus(e.target.value)}
+              className="mt-1 w-full border-b border-hairline bg-transparent py-1 text-[15px] focus:border-accent focus:outline-none"
+            >
+              <option value="draft">草稿</option>
+              <option value="active">已上架</option>
+              <option value="sold_out">已售完</option>
+              <option value="archived">已下架</option>
+            </select>
           </label>
         </div>
 
-        {photos.length === 0 ? (
-          <div className="mt-4 text-[13px] text-ink-soft">還沒有照片。</div>
-        ) : (
-          <div className="mt-4 flex flex-wrap gap-3">
-            {photos.map((p) => (
-              <div key={p.id} className="w-28">
-                <button
-                  type="button"
-                  onClick={() => setZoom({ url: p.url, name: `${name}（${p.sortOrder}）` })}
-                  className="block w-28 border border-hairline"
-                >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={p.url} alt="" className="h-28 w-28 object-cover" />
-                </button>
-                <div className="mt-1 flex items-center justify-between text-[12px]">
-                  <span className="tnum text-ink-soft">
-                    {productId}-{p.sortOrder}
-                  </span>
+        {/* ── 照片 ── */}
+        <div className="border-t border-hairline px-5 py-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="text-[12px] text-ink-soft">商品照片</div>
+              <div className="mt-0.5 text-[12px] text-ink-soft">
+                可一次選多張，<strong className="text-ink">檔名不用先改</strong>——存進電腦時會自動
+                重新命名成 <span className="tnum">{productId}-1.jpg</span>、
+                <span className="tnum">{productId}-2.jpg</span> 依序排下去。
+              </div>
+            </div>
+            <label className="cursor-pointer border border-hairline px-4 py-2 text-[13px] hover:border-accent">
+              {uploading ? '上傳中…' : '選擇照片'}
+              <input
+                ref={fileInput}
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                multiple
+                disabled={uploading || pending}
+                onChange={(e) => upload(e.target.files)}
+                className="hidden"
+              />
+            </label>
+          </div>
+
+          {photos.length === 0 ? (
+            <div className="mt-3 text-[13px] text-ink-soft">還沒有照片。</div>
+          ) : (
+            <div className="mt-3 flex flex-wrap gap-3">
+              {photos.map((p) => (
+                <div key={p.id} className="w-24">
                   <button
                     type="button"
-                    onClick={() => removePhoto(p.id)}
-                    disabled={pending}
-                    className="text-ink-soft hover:text-alert"
+                    onClick={() => setZoom({ url: p.url, name: `${name}（${p.sortOrder}）` })}
+                    className="block w-24 border border-hairline transition hover:border-accent"
                   >
-                    移除
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={p.url} alt="" className="h-24 w-24 object-cover" />
                   </button>
+                  <div className="mt-1 flex items-center justify-between text-[12px]">
+                    <span className="tnum text-ink-soft">
+                      {productId}-{p.sortOrder}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => removePhoto(p.id)}
+                      disabled={pending}
+                      className="text-ink-soft hover:text-alert"
+                    >
+                      移除
+                    </button>
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </section>
 
-      <div className="mb-8 grid gap-4 sm:grid-cols-4">
-        <div className="border border-hairline px-5 py-4">
-          <div className="text-[11px] tracking-[0.15em] text-ink-soft">材料成本</div>
-          <div className="mt-1.5 tnum text-2xl">{formatTWD(costCents, true)}</div>
-          <div className="mt-1 text-[12px] text-ink-soft">{lines.length} 種珠子</div>
+      {/* ── 成本摘要：一條橫列，不再佔四大格 ── */}
+      <section className="mb-6 flex flex-wrap items-center gap-x-8 gap-y-3 border border-hairline px-5 py-3">
+        <div>
+          <span className="text-[12px] text-ink-soft">材料成本 </span>
+          <span className="tnum text-[17px]">{formatTWD(costCents, true)}</span>
+          <span className="ml-1 text-[12px] text-ink-soft">
+            （{lines.length} 種 / {totalBeadCount} 顆）
+          </span>
         </div>
-        <div className="border border-hairline px-5 py-4">
-          <div className="text-[11px] tracking-[0.15em] text-ink-soft">售價</div>
-          <input
-            type="number"
-            value={price}
-            onChange={(e) => setPrice(e.target.value)}
-            className="mt-1.5 w-full border-b border-hairline bg-transparent tnum text-2xl focus:border-accent focus:outline-none"
-          />
-        </div>
-        <div className="border border-hairline px-5 py-4">
-          <div className="text-[11px] tracking-[0.15em] text-ink-soft">毛利</div>
-          <div
-            className={`mt-1.5 tnum text-2xl ${margin.profitCents < 0 ? 'text-alert' : 'text-ink'}`}
-          >
+        <div>
+          <span className="text-[12px] text-ink-soft">毛利 </span>
+          <span className={`tnum text-[17px] ${margin.profitCents < 0 ? 'text-alert' : 'text-ink'}`}>
             {formatTWD(margin.profitCents)}
-          </div>
-          <div className="mt-1 text-[12px] text-ink-soft">
-            毛利率 {Math.round(margin.marginRate * 100)}%
-          </div>
+          </span>
+          <span className="ml-1 text-[12px] text-ink-soft">
+            （{Math.round(margin.marginRate * 100)}%）
+          </span>
         </div>
-        <div className="border border-hairline px-5 py-4">
-          <div className="text-[11px] tracking-[0.15em] text-ink-soft">目前可做</div>
-          <div className={`mt-1.5 tnum text-2xl ${buildable === 0 ? 'text-alert' : 'text-ink'}`}>
+        <div>
+          <span className="text-[12px] text-ink-soft">目前可做 </span>
+          <span className={`tnum text-[17px] ${buildable === 0 ? 'text-alert' : 'text-ink'}`}>
             {buildable}
-          </div>
-          <div className="mt-1 text-[12px] text-ink-soft">依現有庫存</div>
+          </span>
+          <span className="ml-1 text-[12px] text-ink-soft">條（依現有庫存）</span>
         </div>
-      </div>
+      </section>
 
       {error && <div className="mb-5 border-l-2 border-alert bg-alert/5 px-4 py-3 text-[13px]">{error}</div>}
       {msg && <div className="mb-5 border-l-2 border-accent bg-sunk px-4 py-3 text-[13px]">{msg}</div>}
 
-      <div className="mb-4 flex flex-wrap items-center gap-5">
-        <label className="text-[13px]">
-          <span className="text-ink-soft">狀態</span>
-          <select
-            value={currentStatus}
-            onChange={(e) => setCurrentStatus(e.target.value)}
-            className="ml-2 border-b border-hairline bg-transparent py-1.5 focus:border-accent focus:outline-none"
-          >
-            <option value="draft">草稿</option>
-            <option value="active">已上架</option>
-            <option value="sold_out">已售完</option>
-            <option value="archived">已下架</option>
-          </select>
-        </label>
-        <button
-          onClick={save}
-          disabled={pending}
-          className="bg-ink px-6 py-2.5 text-[13px] tracking-wider text-paper hover:bg-accent disabled:opacity-50"
-        >
-          {pending ? '儲存中…' : '儲存配方'}
-        </button>
-        <button
-          onClick={reset}
-          disabled={pending || !dirty}
-          title={
-            saved.lines.length === 0
-              ? '還沒存過配方，重設會清空目前的勾選'
-              : '回到上次儲存的內容'
-          }
-          className="border border-hairline px-5 py-2.5 text-[13px] tracking-wider text-ink hover:border-accent disabled:opacity-40"
-        >
-          重設
-        </button>
-        {dirty && <span className="text-[12px] text-ink-soft">有未儲存的改動</span>}
-      </div>
-
-      <p className="mb-3 text-[13px] text-ink-soft">
-        勾選這條手串用到的珠子，填上各用幾顆。上方成本與毛利會即時重算。
-        庫存 0 的照樣可以勾——先把配方排好，缺的貨再去補。
-      </p>
-
-      <div className="mb-4 flex flex-wrap items-center gap-4">
-        <input
-          type="search"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="搜尋珠子名稱、尺寸或分類…"
-          className="w-full max-w-xs border-b border-hairline bg-transparent py-1.5 text-[13px] focus:border-accent focus:outline-none"
-        />
-        <span className="text-[12px] text-ink-soft">
-          {q ? `符合 ${visibleBeads.length} 種` : `共 ${beads.length} 種`}
-          {lines.length > 0 && `，已選 ${lines.length} 種`}
-        </span>
-        {q && (
-          <button
-            onClick={() => setQuery('')}
-            className="text-[12px] text-ink-soft underline hover:text-ink"
-          >
-            清除搜尋
-          </button>
-        )}
-      </div>
-
-      {beads.length === 0 ? (
-        <div className="border border-dashed border-hairline px-8 py-12 text-center text-[13px] text-ink-soft">
-          還沒有珠子可選。先到「進貨」匯入淘寶訂單。
+      {/* ── 選料 ── */}
+      <section className="mb-24">
+        <div className="mb-3 flex flex-wrap items-baseline justify-between gap-3">
+          <h2 className="font-serif text-[15px] tracking-wider text-ink">選料</h2>
+          <p className="text-[12px] text-ink-soft">
+            勾選用到的珠子填上顆數，成本即時重算。庫存 0 也能勾，缺的再去補貨。
+          </p>
         </div>
-      ) : visibleBeads.length === 0 ? (
-        <div className="border border-dashed border-hairline px-8 py-12 text-center text-[13px] text-ink-soft">
-          找不到符合「{query}」的珠子。
+
+        <div className="mb-4 border border-hairline">
+          {/* 搜尋列永遠看得到，細部條件收在下面 */}
+          <div className="flex flex-wrap items-center gap-3 px-4 py-2.5">
+            <input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="搜尋名稱、淘寶原文、款式、分類、供應商…"
+              className="min-w-[220px] flex-1 border-b border-hairline bg-transparent py-1 text-[13px] focus:border-accent focus:outline-none"
+            />
+
+            <label className="flex cursor-pointer items-center gap-1.5 text-[12px] text-ink-soft">
+              <input
+                type="checkbox"
+                checked={selectedOnly}
+                onChange={(e) => setSelectedOnly(e.target.checked)}
+              />
+              只看已選（{lines.length}）
+            </label>
+
+            <button
+              type="button"
+              onClick={() => setFilterOpen((v) => !v)}
+              aria-expanded={filterOpen}
+              className={`border px-3 py-1 text-[12px] transition ${
+                activeFilters > 0
+                  ? 'border-ink bg-ink text-paper'
+                  : 'border-hairline text-ink-soft hover:border-accent hover:text-ink'
+              }`}
+            >
+              篩選{activeFilters > 0 ? ` (${activeFilters})` : ''} {filterOpen ? '▲' : '▼'}
+            </button>
+
+            {activeFilters > 0 && (
+              <button
+                type="button"
+                onClick={clearFilters}
+                className="text-[12px] text-ink-soft underline hover:text-ink"
+              >
+                清除
+              </button>
+            )}
+          </div>
+
+          {filterOpen && (
+            <div className="grid gap-x-6 gap-y-3 border-t border-hairline px-4 py-3 sm:grid-cols-2 lg:grid-cols-3">
+              <div className="text-[12px] lg:col-span-3">
+                <span className="block text-ink-soft">分類（可複選）</span>
+                <div className="mt-1.5">
+                  <ChipGroup
+                    options={categoryOptions}
+                    selected={fCats}
+                    onToggle={(v) => toggleSet(fCats, v, setFCats)}
+                  />
+                </div>
+              </div>
+
+              <div className="text-[12px]">
+                <span className="block text-ink-soft">尺寸 mm</span>
+                <div className="mt-1.5">
+                  <RangeInput value={fSize} onChange={setFSize} />
+                </div>
+              </div>
+
+              <div className="text-[12px]">
+                <span className="block text-ink-soft">單顆成本 NT$</span>
+                <div className="mt-1.5">
+                  <RangeInput value={fCost} onChange={setFCost} />
+                </div>
+              </div>
+
+              <div className="text-[12px]">
+                <span className="block text-ink-soft">庫存</span>
+                <div className="mt-1.5">
+                  <RangeInput value={fStock} onChange={setFStock} />
+                </div>
+              </div>
+
+              <div className="text-[12px] lg:col-span-2">
+                <span className="block text-ink-soft">供應商（可複選）</span>
+                <div className="mt-1.5">
+                  <ChipGroup
+                    options={supplierOptions}
+                    selected={fSups}
+                    onToggle={(v) => toggleSet(fSups, v, setFSups)}
+                  />
+                </div>
+              </div>
+
+              <div className="text-[12px]">
+                <span className="block text-ink-soft">快速條件</span>
+                <div className="mt-1.5 flex flex-col gap-1">
+                  <label className="flex cursor-pointer items-center gap-1.5">
+                    <input
+                      type="checkbox"
+                      checked={inStockOnly}
+                      onChange={(e) => setInStockOnly(e.target.checked)}
+                    />
+                    只看有庫存
+                  </label>
+                  <label className="flex cursor-pointer items-center gap-1.5">
+                    <input
+                      type="checkbox"
+                      checked={lowStockOnly}
+                      onChange={(e) => setLowStockOnly(e.target.checked)}
+                    />
+                    只看低於安全庫存
+                  </label>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
-      ) : (
-        <div className="space-y-8">
-          {categories.map((cat) => {
-            const group = visibleBeads.filter((b) => (b.category ?? '未分類') === cat)
-            if (group.length === 0) return null
-            return (
-              <section key={cat}>
-                <h3 className="mb-2 border-b border-hairline pb-1.5 font-serif text-[15px] tracking-wider text-ink">
-                  {cat}
-                </h3>
-                <ul className="divide-y divide-hairline">
-                  {group.map((b) => {
-                    const line = lines.find((l) => l.beadId === b.id)
-                    const checked = used.has(b.id)
-                    return (
-                      <li key={b.id} className="flex flex-wrap items-center gap-4 py-2.5 text-[13px]">
-                        {/* 縮圖不能放在 label 內，否則點圖會變成勾選 */}
-                        {b.imageUrl ? (
-                          <button
-                            type="button"
-                            onClick={() => setZoom({ url: b.imageUrl as string, name: b.name })}
-                            title="點開看大圖"
-                            className="h-9 w-9 shrink-0 overflow-hidden border border-hairline transition hover:border-accent"
-                          >
-                            {/* 圖片來源含外部網址（淘寶），next/image 需設定網域，故用原生 img */}
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img src={b.imageUrl} alt={b.name} className="h-full w-full object-cover" />
-                          </button>
-                        ) : (
-                          <span className="h-9 w-9 shrink-0 border border-hairline bg-sunk" />
-                        )}
-                        <label className="flex flex-1 min-w-[200px] cursor-pointer items-center gap-3">
-                          <input type="checkbox" checked={checked} onChange={() => toggle(b.id)} />
-                          <span>{b.name}</span>
-                          {b.sizeMm && <span className="tnum text-ink-soft">{b.sizeMm}mm</span>}
-                        </label>
-                        <span className="tnum w-24 text-right text-ink-soft">
-                          {formatTWD(b.unitCostCents, true)}
-                        </span>
-                        <span
-                          className={`tnum w-20 text-right ${b.stockQty === 0 ? 'text-alert' : 'text-ink-soft'}`}
+
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3 text-[12px] text-ink-soft">
+          <span>
+            顯示 {visibleBeads.length} 種
+            {activeFilters > 0 && ` / 全部 ${beads.length} 種`}
+            {lines.length > 0 && `，已選 ${lines.length} 種`}
+          </span>
+          <div className="flex items-center gap-2">
+            <span>排序</span>
+            {(Object.keys(SORT_LABEL) as SortKey[]).map((k) => (
+              <button
+                key={k}
+                type="button"
+                onClick={() => {
+                  if (sortKey === k) setSortAsc((v) => !v)
+                  else {
+                    setSortKey(k)
+                    setSortAsc(true)
+                  }
+                }}
+                className={`border px-2 py-0.5 transition ${
+                  sortKey === k
+                    ? 'border-ink text-ink'
+                    : 'border-transparent text-ink-soft hover:text-ink'
+                }`}
+              >
+                {SORT_LABEL[k]}
+                {sortKey === k && (sortAsc ? ' ↑' : ' ↓')}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {beads.length === 0 ? (
+          <div className="border border-dashed border-hairline px-8 py-12 text-center text-[13px] text-ink-soft">
+            還沒有珠子可選。先到「庫存」匯入淘寶訂單。
+          </div>
+        ) : visibleBeads.length === 0 ? (
+          <div className="border border-dashed border-hairline px-8 py-12 text-center text-[13px] text-ink-soft">
+            找不到符合條件的珠子。
+            <button onClick={clearFilters} className="ml-2 underline hover:text-ink">
+              清除篩選
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-8">
+            {categories.map((cat) => {
+              const group = visibleBeads.filter((b) => (b.category ?? UNCATEGORIZED) === cat)
+              if (group.length === 0) return null
+              return (
+                <section key={cat}>
+                  <h3 className="mb-2 border-b border-hairline pb-1.5 font-serif text-[15px] tracking-wider text-ink">
+                    {cat}
+                    <span className="ml-2 text-[12px] tracking-normal text-ink-soft">
+                      {group.length}
+                    </span>
+                  </h3>
+                  <ul className="divide-y divide-hairline">
+                    {group.map((b) => {
+                      const line = lines.find((l) => l.beadId === b.id)
+                      const checked = used.has(b.id)
+                      const low = b.reorderPoint > 0 && b.stockQty <= b.reorderPoint
+                      return (
+                        <li
+                          key={b.id}
+                          className={`flex flex-wrap items-center gap-4 py-2.5 text-[13px] ${
+                            checked ? 'bg-sunk' : ''
+                          }`}
                         >
-                          庫存 {b.stockQty}
-                        </span>
-                        <span className="w-28 text-right">
-                          {checked && (
-                            <input
-                              type="number"
-                              min={1}
-                              value={line?.qty ?? 1}
-                              onChange={(e) => setQty(b.id, Number.parseInt(e.target.value, 10) || 1)}
-                              className="w-16 border-b border-hairline bg-transparent py-1 text-right tnum focus:border-accent focus:outline-none"
-                            />
+                          {/* 縮圖不能放在 label 內，否則點圖會變成勾選 */}
+                          {b.imageUrl ? (
+                            <button
+                              type="button"
+                              onClick={() => setZoom({ url: b.imageUrl as string, name: b.name })}
+                              title="點開看大圖"
+                              className="h-9 w-9 shrink-0 overflow-hidden border border-hairline transition hover:border-accent"
+                            >
+                              {/* 圖片來源含外部網址（淘寶），next/image 需設定網域，故用原生 img */}
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img src={b.imageUrl} alt={b.name} className="h-full w-full object-cover" />
+                            </button>
+                          ) : (
+                            <span className="h-9 w-9 shrink-0 border border-hairline bg-sunk" />
                           )}
-                        </span>
-                        <span className="tnum w-24 text-right">
-                          {checked && line ? formatTWD(b.unitCostCents * line.qty, true) : ''}
-                        </span>
-                      </li>
-                    )
-                  })}
-                </ul>
-              </section>
-            )
-          })}
+                          <label className="flex flex-1 min-w-[200px] cursor-pointer items-center gap-3">
+                            <input type="checkbox" checked={checked} onChange={() => toggle(b.id)} />
+                            <span>{b.name}</span>
+                            {b.sizeMm && <span className="tnum text-ink-soft">{b.sizeMm}mm</span>}
+                          </label>
+                          <span className="tnum w-24 text-right text-ink-soft">
+                            {formatTWD(b.unitCostCents, true)}
+                          </span>
+                          <span
+                            className={`tnum w-20 text-right ${
+                              b.stockQty === 0 ? 'text-alert' : low ? 'text-accent' : 'text-ink-soft'
+                            }`}
+                            title={low ? `低於安全庫存 ${b.reorderPoint}` : undefined}
+                          >
+                            庫存 {b.stockQty}
+                          </span>
+                          <span className="w-28 text-right">
+                            {checked && (
+                              <input
+                                type="number"
+                                min={1}
+                                value={line?.qty ?? 1}
+                                onChange={(e) => setQty(b.id, Number.parseInt(e.target.value, 10) || 1)}
+                                className="w-16 border-b border-hairline bg-transparent py-1 text-right tnum focus:border-accent focus:outline-none"
+                              />
+                            )}
+                          </span>
+                          <span className="tnum w-24 text-right">
+                            {checked && line ? formatTWD(b.unitCostCents * line.qty, true) : ''}
+                          </span>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                </section>
+              )
+            })}
+          </div>
+        )}
+      </section>
+
+      {/* ── 儲存列固定在底部，捲到哪都能存 ── */}
+      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-hairline bg-paper/95 backdrop-blur">
+        <div className="mx-auto flex max-w-[1400px] flex-wrap items-center justify-end gap-4 px-6 py-3">
+          {dirty && <span className="mr-auto text-[12px] text-accent">有未儲存的改動</span>}
+          {!dirty && msg && <span className="mr-auto text-[12px] text-ink-soft">{msg}</span>}
+          <button
+            onClick={reset}
+            disabled={pending || !dirty}
+            title={
+              saved.lines.length === 0
+                ? '還沒存過配方，重設會清空目前的勾選'
+                : '回到上次儲存的內容'
+            }
+            className="border border-hairline px-5 py-2.5 text-[13px] tracking-wider text-ink hover:border-accent disabled:opacity-40"
+          >
+            重設
+          </button>
+          <button
+            onClick={save}
+            disabled={pending}
+            className="bg-ink px-6 py-2.5 text-[13px] tracking-wider text-paper hover:bg-accent disabled:opacity-50"
+          >
+            {pending ? '儲存中…' : '儲存'}
+          </button>
         </div>
-      )}
+      </div>
 
       {zoom && (
         <div
@@ -480,9 +814,6 @@ export default function RecipeEditor({
             </div>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={zoom.url} alt={zoom.name} className="max-h-[65vh] w-full bg-sunk object-contain" />
-            <p className="mt-3 text-[12px] text-ink-soft">
-              要換圖請到「珠子」頁面。
-            </p>
           </div>
         </div>
       )}

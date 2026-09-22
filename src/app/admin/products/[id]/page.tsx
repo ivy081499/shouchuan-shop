@@ -57,8 +57,12 @@ export default async function ProductDetailPage({
           sizeMm: b.sizeMm,
           unitCostCents: b.unitCostCents,
           stockQty: b.stockQty,
+          reorderPoint: b.reorderPoint,
           category: b.category,
           imageUrl: b.imageUrl,
+          supplierName: b.supplierName,
+          sourceTitle: b.sourceTitle,
+          sourceSpec: b.sourceSpec,
         }))}
         initialLines={recipe.map((r) => ({ beadId: r.beadId, qty: r.qty }))}
       />
