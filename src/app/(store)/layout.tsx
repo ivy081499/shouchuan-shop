@@ -16,6 +16,7 @@ export default async function StoreLayout({ children }: { children: React.ReactN
   const s = await getStoreSettings()
   const storeName = s.store_name || '平凡生活'
   const bankFilled = Boolean(s.bank_name && s.bank_account)
+  const contactFilled = Boolean(s.contact_email || s.contact_line || s.contact_instagram)
 
   return (
     <div className="store flex min-h-dvh flex-col">
@@ -46,7 +47,7 @@ export default async function StoreLayout({ children }: { children: React.ReactN
       <main className="mx-auto w-full max-w-[1080px] flex-1 px-5 py-12 sm:py-20">{children}</main>
 
       <footer className="border-t border-hairline">
-        <div className="mx-auto grid max-w-[1080px] gap-8 px-5 py-12 text-[13px] leading-[2] text-ink-soft sm:grid-cols-2">
+        <div className="mx-auto grid max-w-[1080px] gap-8 px-5 py-12 text-[13px] leading-[2] text-ink-soft sm:grid-cols-2 lg:grid-cols-3">
           <section>
             <h2 className="mb-2 font-serif tracking-[0.2em] text-ink">怎麼購買</h2>
             <p>
@@ -67,6 +68,41 @@ export default async function StoreLayout({ children }: { children: React.ReactN
               <p>轉帳資訊會在下單完成後告知。</p>
             )}
           </section>
+
+          {/*
+            聯絡方式：三個欄位都沒填就整區不顯示，
+            免得客人看到「聯絡方式」底下一片空白。
+          */}
+          {contactFilled && (
+            <section>
+              <h2 className="mb-2 font-serif tracking-[0.2em] text-ink">聯絡我</h2>
+              <ul className="not-prose">
+                {s.contact_email && (
+                  <li>
+                    <a
+                      href={`mailto:${s.contact_email}`}
+                      className="underline underline-offset-2 hover:text-ink"
+                    >
+                      {s.contact_email}
+                    </a>
+                  </li>
+                )}
+                {s.contact_line && <li>LINE {s.contact_line}</li>}
+                {s.contact_instagram && (
+                  <li>
+                    <a
+                      href={`https://instagram.com/${s.contact_instagram.replace(/^@/, '')}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="underline underline-offset-2 hover:text-ink"
+                    >
+                      Instagram @{s.contact_instagram.replace(/^@/, '')}
+                    </a>
+                  </li>
+                )}
+              </ul>
+            </section>
+          )}
         </div>
 
         <div className="border-t border-hairline px-5 py-5 text-center text-[11px] tracking-[0.1em] text-ink-soft">

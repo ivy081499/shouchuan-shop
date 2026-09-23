@@ -32,11 +32,18 @@ function dotSize(sizeMm: number | null): number {
 /**
  * 珠名常常已經寫了尺寸（「月光石 6mm 藍月光」），再印一次會變成
  * 「月光石 6mm 藍月光 6mm」。名稱裡有了就不重複印。
+ *
+ * 必須是精確比對：單純用 includes 的話，珠名「白水晶 16mm」會被
+ * sizeMm=6 誤判成「已經寫了」，尺寸就整個不見了。
+ * 所以前面要求非數字、後面允許空格與大小寫。
  */
 function sizeLabel(name: string, sizeMm: number | null): string {
   if (sizeMm === null) return ''
   const mm = String(sizeMm).replace(/\.0$/, '')
-  return name.includes(`${mm}mm`) ? '' : `${mm}mm `
+  // 名稱可能寫「6mm」也可能寫「6.0mm」，兩種都算已經寫了
+  const escaped = `${mm.replace('.', '\\.')}(\\.0)?`
+  const written = new RegExp(`(^|[^\\d.])${escaped}\\s*mm`, 'i').test(name)
+  return written ? '' : `${mm}mm `
 }
 
 export default function RecipeXray({ recipe }: { recipe: RecipeBeadView[] }) {
