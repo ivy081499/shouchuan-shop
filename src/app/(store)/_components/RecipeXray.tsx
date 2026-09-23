@@ -13,20 +13,27 @@ import type { RecipeBeadView } from '@/contracts/product'
  */
 
 /**
- * 真實尺寸多半落在 4～10mm，直接等比畫的話 6mm 與 6.4mm 幾乎分不出來。
- * 所以取一個基準點放大差距：比基準大的更大、小的更小，
- * 相對關係仍然忠於實際尺寸（大的還是大），只是差距看得見。
+ * 圓點直徑：以 6mm 畫成 24px 為基準。
+ *
+ * 不用直線比例。直線比例要嘛大珠爆版，要嘛小珠全部擠在下限——
+ * 店主的料從 2.5mm 到 8.3mm 都有，2.5／3／3.5／4mm 會變成一樣大，
+ * 「按實際大小畫」就不成立了。改成隨 mm 的 0.75 次方變化：
+ * 小的那端分得出來，大的那端不會失控。
  */
 const BASE_MM = 6
-const BASE_PX = 22
-/** 每偏離基準 1mm，直徑加減這麼多 px */
-const PX_PER_MM_DIFF = 5
-/** 沒填尺寸時的預設，才不會畫成一個點 */
+const BASE_PX = 24
+const EXPONENT = 0.75
+/** 看得見的最小直徑，與不讓單顆珠撐破版面的上限 */
+const MIN_PX = 11
+const MAX_PX = 52
+/** 沒填尺寸時當成基準大小，才不會畫成一個點 */
 const FALLBACK_MM = 6
 
 function dotSize(sizeMm: number | null): number {
   const mm = sizeMm ?? FALLBACK_MM
-  return Math.max(12, BASE_PX + (mm - BASE_MM) * PX_PER_MM_DIFF)
+  if (mm <= 0) return MIN_PX
+  const px = BASE_PX * Math.pow(mm / BASE_MM, EXPONENT)
+  return Math.round(Math.min(MAX_PX, Math.max(MIN_PX, px)))
 }
 
 /**

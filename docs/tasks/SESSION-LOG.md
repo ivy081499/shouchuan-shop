@@ -157,6 +157,19 @@ D1 沒有跨陳述句交易，這是能做到的最好保證。
   已登記 `docs/tasks/BOARD.md` 的 **P1-03**，前台上線前必須補。
   這不屬於 S6 可寫路徑，前台工作流不能自己做。
 
+**第二輪稽核補修（同日）**
+
+- **圓點大小改用 0.75 次方曲線。** 原本是直線比例（每 1mm 加減 5px、下限 12px），
+  結果 **2.5／3／3.5／4／4.2mm 五種珠全部被壓在 12px**，大小完全分不出來——
+  店主 26 種有尺寸的料裡就有 6 種中招，「按實際大小畫」等於沒做到。
+  現在 6mm=24px 為基準、隨 mm 的 0.75 次方變化，上下限 11～52px。
+  實測 2.5→3→4→6→8mm 五個級距肉眼都分得出來。
+- **`getStoreSettings()` 與 `loadPublished()` 包上 React `cache()`。**
+  `generateMetadata` 與頁面本體都會呼叫它們，沒有這層的話**每次請求查兩遍**
+  （詳情頁是商品、照片、配方、可售量四組查詢全部重來）。
+  做法依 `node_modules/next/dist/docs/01-app/01-getting-started/14-metadata-and-og-images.md`
+  的「Memoizing data requests」，不是自己發明的。
+
 **稽核查過、沒問題的項目**（不用再查一次）
 
 凍結規則（schema／contracts／migrations／package.json／`src/data`／`src/lib` 全未動）、

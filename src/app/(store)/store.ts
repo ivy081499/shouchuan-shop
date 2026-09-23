@@ -5,6 +5,7 @@
  * 版面邏輯與後台各自獨立（見 docs/05-DESIGN-SYSTEM.md）。
  */
 
+import { cache } from 'react'
 import { getDb, getPublicImageBase } from '@/data/db'
 import { settings } from '@db/schema'
 
@@ -22,8 +23,12 @@ export { getPublicImageBase }
 /** 店鋪設定（店名、標語、匯款資訊都存在 settings 表，不寫死） */
 export type StoreSettings = Record<string, string>
 
-export async function getStoreSettings(): Promise<StoreSettings> {
+/**
+ * `cache()` 讓同一次請求只查一次資料庫。
+ * layout 的 generateMetadata 與版面本體都要用它，沒有這層就會查兩次。
+ */
+export const getStoreSettings = cache(async (): Promise<StoreSettings> => {
   const db = await getDb()
   const rows = await db.select({ key: settings.key, value: settings.value }).from(settings)
   return Object.fromEntries(rows.map((r) => [r.key, r.value]))
-}
+})

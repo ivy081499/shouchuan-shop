@@ -1,3 +1,4 @@
+import { cache } from 'react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import type { Metadata } from 'next'
@@ -14,13 +15,16 @@ export const dynamic = 'force-dynamic'
  * 只有已上架的看得到。
  * getProductDetail() 不篩狀態（後台預覽也用它），所以草稿與下架要在這裡擋，
  * 否則有人猜到網址就能看到還沒準備好的商品。
+ *
+ * 包 `cache()`：generateMetadata 與頁面本體都要呼叫，
+ * 沒有這層的話商品、照片、配方、可售量全部會查兩遍。
  */
-async function loadPublished(slug: string) {
+const loadPublished = cache(async (slug: string) => {
   const db = await getDb()
   const product = await getProductDetail(db, slug)
   if (!product || product.status !== 'active') return null
   return product
-}
+})
 
 export async function generateMetadata({
   params,
