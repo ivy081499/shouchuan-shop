@@ -2,8 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import {
-  saveRecipeAction,
-  updateProductAction,
+  saveProductAction,
   uploadProductImages,
   deleteProductImageAction,
 } from '../actions.ts'
@@ -88,6 +87,11 @@ function inRange(value: number | null, r: Range): boolean {
 export default function RecipeEditor({
   productId,
   productName,
+  productSlug,
+  description: initialDescription,
+  wristSizeCm: initialWristSize,
+  manualStock: initialManualStock,
+  sortOrder: initialSortOrder,
   priceCents,
   status,
   images,
@@ -96,6 +100,11 @@ export default function RecipeEditor({
 }: {
   productId: number
   productName: string
+  productSlug: string
+  description: string | null
+  wristSizeCm: number | null
+  manualStock: number | null
+  sortOrder: number
   priceCents: number
   status: string
   images: ProductPhoto[]
@@ -106,6 +115,14 @@ export default function RecipeEditor({
   const [price, setPrice] = useState(String(priceCents / 100))
   const [currentStatus, setCurrentStatus] = useState(status)
   const [name, setName] = useState(productName)
+  const [slug, setSlug] = useState(productSlug)
+  const [description, setDescription] = useState(initialDescription ?? '')
+  const [wristSize, setWristSize] = useState(initialWristSize === null ? '' : String(initialWristSize))
+  /** 空字串代表「依配方自動計算」（存進資料庫是 null） */
+  const [manualStock, setManualStock] = useState(
+    initialManualStock === null ? '' : String(initialManualStock),
+  )
+  const [sortOrder, setSortOrder] = useState(String(initialSortOrder))
   const [photos, setPhotos] = useState<ProductPhoto[]>(images)
   const [uploading, setUploading] = useState(false)
   const fileInput = useRef<HTMLInputElement>(null)
@@ -120,6 +137,11 @@ export default function RecipeEditor({
     price: String(priceCents / 100),
     status,
     name: productName,
+    slug: productSlug,
+    description: initialDescription ?? '',
+    wristSize: initialWristSize === null ? '' : String(initialWristSize),
+    manualStock: initialManualStock === null ? '' : String(initialManualStock),
+    sortOrder: String(initialSortOrder),
   })
 
   /* ── 選料的篩選條件 ── */
@@ -213,6 +235,11 @@ export default function RecipeEditor({
     setPrice(saved.price)
     setCurrentStatus(saved.status)
     setName(saved.name)
+    setSlug(saved.slug)
+    setDescription(saved.description)
+    setWristSize(saved.wristSize)
+    setManualStock(saved.manualStock)
+    setSortOrder(saved.sortOrder)
     setError(null)
     setMsg(null)
     setZoom(null)
@@ -223,6 +250,11 @@ export default function RecipeEditor({
     price !== saved.price ||
     currentStatus !== saved.status ||
     name !== saved.name ||
+    slug !== saved.slug ||
+    description !== saved.description ||
+    wristSize !== saved.wristSize ||
+    manualStock !== saved.manualStock ||
+    sortOrder !== saved.sortOrder ||
     lines.length !== saved.lines.length ||
     lines.some((l) => {
       const s = saved.lines.find((x) => x.beadId === l.beadId)
@@ -236,26 +268,64 @@ export default function RecipeEditor({
       setError('請填寫手串名稱。')
       return
     }
+    if (slug.trim() === '') {
+      setError('請填寫網址代稱。')
+      return
+    }
+    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug.trim())) {
+      setError('網址代稱只能用小寫英文、數字與連字號，例：peach-blossom。')
+      return
+    }
     startTransition(async () => {
-      const r1 = await saveRecipeAction(
+      // 留白代表「沒有值」，存 null 而不是 0——0 在手圍與限量都有別的意思
+      const toNullableNumber = (s: string) => {
+        const t = s.trim()
+        if (t === '') return null
+        const n = Number(t)
+        return Number.isFinite(n) ? n : null
+      }
+
+      /**
+       * 商品欄位與配方一起送，由後端「全部驗證通過才寫入」。
+       * 不可以拆成兩次呼叫——配方是先刪後建，若先寫配方、商品才驗證失敗，
+       * 配方會被清空卻顯示錯誤，店主以為沒存成功。
+       */
+      const r = await saveProductAction(
         productId,
+        {
+          name: name.trim(),
+          slug: slug.trim(),
+          description: description.trim() === '' ? null : description.trim(),
+          wristSizeCm: toNullableNumber(wristSize),
+          manualStock: toNullableNumber(manualStock),
+          sortOrder: toNullableNumber(sortOrder) ?? 0,
+          priceCents: yuanToCents(price),
+          status: currentStatus,
+        },
         lines.map((l, i) => ({ beadId: l.beadId, qty: l.qty, position: i })),
       )
-      if (!r1.ok) {
-        setError(r1.error)
+      if (!r.ok) {
+        setError(r.error)
         return
       }
-      const r2 = await updateProductAction(productId, {
-        name: name.trim(),
-        priceCents: yuanToCents(price),
+      setSaved({
+        lines,
+        price,
         status: currentStatus,
+        name: name.trim(),
+        slug: slug.trim(),
+        description: description.trim(),
+        wristSize: wristSize.trim(),
+        manualStock: manualStock.trim(),
+        sortOrder: String(toNullableNumber(sortOrder) ?? 0),
       })
-      if (!r2.ok) {
-        setError(r2.error)
-        return
-      }
-      setSaved({ lines, price, status: currentStatus, name: name.trim() })
+      // 把畫面上的值也正規化，否則尾隨空白會讓「已儲存」後仍顯示有未存改動
       setName(name.trim())
+      setSlug(slug.trim())
+      setDescription(description.trim())
+      setWristSize(wristSize.trim())
+      setManualStock(manualStock.trim())
+      setSortOrder(String(toNullableNumber(sortOrder) ?? 0))
       setMsg('已儲存')
     })
   }
@@ -290,7 +360,14 @@ export default function RecipeEditor({
       const r = await deleteProductImageAction(productId, imageId)
       if (!r.ok) return
       setPhotos((ps) => ps.filter((p) => p.id !== imageId))
-      setMsg('已移除照片（檔案仍留在電腦上）')
+      if (r.demoted) {
+        // 後端已把狀態改掉，畫面要跟上，否則按儲存會把 active 寫回去
+        setCurrentStatus('draft')
+        setSaved((s) => ({ ...s, status: 'draft' }))
+        setMsg('已移除最後一張照片，這條手串自動退回草稿（沒有照片不能上架）。')
+      } else {
+        setMsg('已移除照片（檔案仍留在電腦上）')
+      }
     })
   }
 
@@ -511,6 +588,79 @@ export default function RecipeEditor({
               <option value="sold_out">已售完</option>
               <option value="archived">已下架</option>
             </select>
+          </label>
+
+          <label className="text-[12px]">
+            <span className="block text-ink-soft">手圍 cm</span>
+            <input
+              type="number"
+              step="0.5"
+              value={wristSize}
+              onChange={(e) => setWristSize(e.target.value)}
+              placeholder="16.5"
+              className="mt-1 w-full border-b border-hairline bg-transparent py-1 tnum text-[15px] focus:border-accent focus:outline-none"
+            />
+            <span className="mt-1 block text-[11px] text-ink-soft">可留空</span>
+          </label>
+
+          <label className="text-[12px]">
+            <span className="block text-ink-soft">限量幾條</span>
+            <input
+              type="number"
+              min={0}
+              value={manualStock}
+              onChange={(e) => setManualStock(e.target.value)}
+              placeholder="自動"
+              className="mt-1 w-full border-b border-hairline bg-transparent py-1 tnum text-[15px] focus:border-accent focus:outline-none"
+            />
+            <span className="mt-1 block text-[11px] text-ink-soft">
+              {manualStock.trim() === ''
+                ? `留空＝依珠子庫存自動算（目前可做 ${buildable} 條）`
+                : '手動限量，不看珠子庫存'}
+            </span>
+          </label>
+
+          <label className="text-[12px]">
+            <span className="block text-ink-soft">排序</span>
+            <input
+              type="number"
+              value={sortOrder}
+              onChange={(e) => setSortOrder(e.target.value)}
+              className="mt-1 w-full border-b border-hairline bg-transparent py-1 tnum text-[15px] focus:border-accent focus:outline-none"
+            />
+            <span className="mt-1 block text-[11px] text-ink-soft">數字小的排前面</span>
+          </label>
+
+          <label className="text-[12px] lg:col-span-2">
+            <span className="block text-ink-soft">網址代稱</span>
+            <input
+              type="text"
+              value={slug}
+              onChange={(e) => setSlug(e.target.value)}
+              placeholder="peach-blossom"
+              className="mt-1 w-full border-b border-hairline bg-transparent py-1 text-[15px] focus:border-accent focus:outline-none"
+            />
+            <span className="mt-1 block text-[11px] text-ink-soft">
+              小寫英文、數字、連字號。
+              {currentStatus === 'active' && slug !== saved.slug && (
+                <strong className="text-alert">　已上架中改這個，舊網址會失效。</strong>
+              )}
+            </span>
+          </label>
+
+          <label className="text-[12px] lg:col-span-4">
+            <span className="block text-ink-soft">商品故事</span>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={4}
+              maxLength={2000}
+              placeholder="這條手串的設計理念、適合什麼場合、想傳達什麼——前台會顯示給客人看。"
+              className="mt-1 w-full resize-y border border-hairline bg-transparent px-3 py-2 text-[13px] leading-relaxed focus:border-accent focus:outline-none"
+            />
+            <span className="mt-1 block text-[11px] text-ink-soft">
+              {description.length} / 2000 字
+            </span>
           </label>
         </div>
 
