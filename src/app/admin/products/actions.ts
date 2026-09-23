@@ -1,10 +1,10 @@
 'use server'
 
 import { getDb } from '@/data/db'
-import { createProduct, updateProduct, saveRecipe, addProductImage, deleteProductImage } from '@/data/products'
+import { createProduct, updateProduct, saveRecipe, addProductImage, deleteProductImage, getProductById } from '@/data/products'
 import { productInputSchema, recipeLineSchema } from '@/contracts/product'
 import { zodMessage } from '@/contracts/common'
-import { productImages } from '@db/schema'
+import { productImages, recipes } from '@db/schema'
 import { eq, asc } from 'drizzle-orm'
 import { z } from 'zod'
 import { revalidatePath } from 'next/cache'
@@ -23,12 +23,54 @@ export async function createProductAction(input: unknown) {
   }
 }
 
+/**
+ * 上架前檢查：缺東西就擋下，並說清楚缺什麼。
+ *
+ * 只在「要改成已上架」時檢查。草稿與下架不限制——
+ * 東西還沒備齊本來就該能先存著。
+ */
+async function checkReadyToPublish(
+  db: Awaited<ReturnType<typeof getDb>>,
+  id: number,
+  priceCents: number | undefined,
+): Promise<string | null> {
+  const missing: string[] = []
+
+  const [imgs, lines, current] = await Promise.all([
+    db.select({ id: productImages.id }).from(productImages).where(eq(productImages.productId, id)).limit(1),
+    db.select({ id: recipes.id }).from(recipes).where(eq(recipes.productId, id)).limit(1),
+    getProductById(db, id),
+  ])
+
+  if (imgs.length === 0) missing.push('還沒有照片，客人看不到商品長怎樣')
+  if (lines.length === 0) missing.push('還沒設定用哪些珠子，算不出成本')
+
+  // 這次沒送 priceCents 就看資料庫現值
+  const price = priceCents ?? current?.priceCents ?? 0
+  if (price <= 0) missing.push('售價還沒填')
+
+  if (missing.length === 0) return null
+  return `還不能上架：${missing.join('；')}。`
+}
+
 export async function updateProductAction(id: number, input: unknown) {
   const parsed = productInputSchema.partial().safeParse(input)
   if (!parsed.success) return { ok: false as const, error: zodMessage(parsed.error) }
 
   const db = await getDb()
-  await updateProduct(db, id, parsed.data)
+
+  if (parsed.data.status === 'active') {
+    const problem = await checkReadyToPublish(db, id, parsed.data.priceCents)
+    if (problem) return { ok: false as const, error: problem }
+  }
+
+  try {
+    await updateProduct(db, id, parsed.data)
+  } catch {
+    // slug 有唯一索引，重複時 D1 會丟錯
+    return { ok: false as const, error: '網址代稱重複了，換一個試試。' }
+  }
+
   revalidatePath('/admin/products')
   revalidatePath(`/admin/products/${id}`)
   return { ok: true as const }

@@ -52,6 +52,11 @@ export default async function ProductDetailPage({
       <RecipeEditor
         productId={product.id}
         productName={product.name}
+        productSlug={product.slug}
+        description={product.description}
+        wristSizeCm={product.wristSizeCm}
+        manualStock={product.manualStock}
+        sortOrder={product.sortOrder}
         priceCents={product.priceCents}
         status={product.status}
         images={images.map((img) => ({ id: img.id, url: toUrl(img.r2Key), sortOrder: img.sortOrder }))}
