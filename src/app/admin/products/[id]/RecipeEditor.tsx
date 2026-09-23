@@ -2,8 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import {
-  saveRecipeAction,
-  updateProductAction,
+  saveProductAction,
   uploadProductImages,
   deleteProductImageAction,
 } from '../actions.ts'
@@ -278,14 +277,6 @@ export default function RecipeEditor({
       return
     }
     startTransition(async () => {
-      const r1 = await saveRecipeAction(
-        productId,
-        lines.map((l, i) => ({ beadId: l.beadId, qty: l.qty, position: i })),
-      )
-      if (!r1.ok) {
-        setError(r1.error)
-        return
-      }
       // 留白代表「沒有值」，存 null 而不是 0——0 在手圍與限量都有別的意思
       const toNullableNumber = (s: string) => {
         const t = s.trim()
@@ -294,18 +285,27 @@ export default function RecipeEditor({
         return Number.isFinite(n) ? n : null
       }
 
-      const r2 = await updateProductAction(productId, {
-        name: name.trim(),
-        slug: slug.trim(),
-        description: description.trim() === '' ? null : description.trim(),
-        wristSizeCm: toNullableNumber(wristSize),
-        manualStock: toNullableNumber(manualStock),
-        sortOrder: Number(sortOrder) || 0,
-        priceCents: yuanToCents(price),
-        status: currentStatus,
-      })
-      if (!r2.ok) {
-        setError(r2.error)
+      /**
+       * 商品欄位與配方一起送，由後端「全部驗證通過才寫入」。
+       * 不可以拆成兩次呼叫——配方是先刪後建，若先寫配方、商品才驗證失敗，
+       * 配方會被清空卻顯示錯誤，店主以為沒存成功。
+       */
+      const r = await saveProductAction(
+        productId,
+        {
+          name: name.trim(),
+          slug: slug.trim(),
+          description: description.trim() === '' ? null : description.trim(),
+          wristSizeCm: toNullableNumber(wristSize),
+          manualStock: toNullableNumber(manualStock),
+          sortOrder: toNullableNumber(sortOrder) ?? 0,
+          priceCents: yuanToCents(price),
+          status: currentStatus,
+        },
+        lines.map((l, i) => ({ beadId: l.beadId, qty: l.qty, position: i })),
+      )
+      if (!r.ok) {
+        setError(r.error)
         return
       }
       setSaved({
@@ -317,11 +317,15 @@ export default function RecipeEditor({
         description: description.trim(),
         wristSize: wristSize.trim(),
         manualStock: manualStock.trim(),
-        sortOrder: String(Number(sortOrder) || 0),
+        sortOrder: String(toNullableNumber(sortOrder) ?? 0),
       })
+      // 把畫面上的值也正規化，否則尾隨空白會讓「已儲存」後仍顯示有未存改動
       setName(name.trim())
       setSlug(slug.trim())
       setDescription(description.trim())
+      setWristSize(wristSize.trim())
+      setManualStock(manualStock.trim())
+      setSortOrder(String(toNullableNumber(sortOrder) ?? 0))
       setMsg('已儲存')
     })
   }
@@ -356,7 +360,14 @@ export default function RecipeEditor({
       const r = await deleteProductImageAction(productId, imageId)
       if (!r.ok) return
       setPhotos((ps) => ps.filter((p) => p.id !== imageId))
-      setMsg('已移除照片（檔案仍留在電腦上）')
+      if (r.demoted) {
+        // 後端已把狀態改掉，畫面要跟上，否則按儲存會把 active 寫回去
+        setCurrentStatus('draft')
+        setSaved((s) => ({ ...s, status: 'draft' }))
+        setMsg('已移除最後一張照片，這條手串自動退回草稿（沒有照片不能上架）。')
+      } else {
+        setMsg('已移除照片（檔案仍留在電腦上）')
+      }
     })
   }
 

@@ -12,6 +12,40 @@
 
 ---
 
+## 2026-09-23 — 階段 A 稽核修正（**有資料損壞風險，已修**） — worktree-storefront-plan
+
+獨立 subagent 稽核 commit `687a19c` 後修掉三個真問題。
+
+**🔴 配方先寫、商品後驗證 → 驗證失敗時配方已被清空**
+`save()` 原本先呼叫 `saveRecipeAction()` 再 `updateProductAction()`。
+`saveRecipe()` 是**先刪後建、無法回滾**，所以 slug 重複或上架檢查擋下時，
+配方已經落地但畫面顯示錯誤，店主以為沒存成功——已上架商品會變成成本 0。
+→ 合併成 `saveProductAction()`，**全部驗證通過才開始寫**。
+D1 沒有跨陳述句交易，這是能做到的最好保證。
+**新增商品編輯功能時請用它，不要再拆成兩次呼叫。**
+
+**🔴 `.partial()` 不會移除 `.refine()` 與 `.default()`**
+實測 zod 4.6.2 確認：
+- `productInputSchema.partial().safeParse({ priceCents: 0 })` → **失敗**（refine 仍在）
+  導致售價空白時只回報售價，A-4 要求的「一次講完缺什麼」永遠跑不到。
+- `.safeParse({})` → 回傳 `{ status:'draft', sortOrder:0 }`（default 仍在）
+  只改名稱的部分更新會**無聲把商品打回草稿**。
+→ 改用 actions 內自行宣告的 `productUpdateSchema`（不帶 default／refine）。
+**不要改回 `productInputSchema.partial()`。**
+
+**🔴 裸 catch 把所有寫入錯誤都說成「網址代稱重複」**
+連線中斷、逾時都會被誤報，店主會去改一個沒重複的代稱。
+→ `describeWriteError()` 只在 `UNIQUE constraint failed: products.slug` 時回那句，
+其他情況回通用訊息並 `console.error` 留線索。
+
+**🟡 已上架商品被刪光照片不受檢查**
+→ `deleteProductImageAction` 刪掉最後一張時，若商品是 active 就**自動降回草稿**
+並在畫面說明。不擋下刪除（店主可能正要換照片），但不讓無圖商品掛在前台。
+
+**驗收**：售價空白 + 無照片 + 改上架 → 一次列出兩項缺失，且配方 6 筆完好未被清空。
+
+---
+
 ## 2026-09-22 — 階段 A 完成：後台上架補完 — worktree-storefront-plan
 
 **做了什麼**（對照 `docs/10-前台與上架計畫.md` 的 A-1～A-4）

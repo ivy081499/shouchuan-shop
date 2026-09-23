@@ -2,8 +2,8 @@
 
 import { getDb } from '@/data/db'
 import { createProduct, updateProduct, saveRecipe, addProductImage, deleteProductImage, getProductById } from '@/data/products'
-import { productInputSchema, recipeLineSchema } from '@/contracts/product'
-import { zodMessage } from '@/contracts/common'
+import { productInputSchema, recipeLineSchema, productStatusSchema } from '@/contracts/product'
+import { zodMessage, slugSchema } from '@/contracts/common'
 import { productImages, recipes } from '@db/schema'
 import { eq, asc } from 'drizzle-orm'
 import { z } from 'zod'
@@ -18,9 +18,48 @@ export async function createProductAction(input: unknown) {
     const p = await createProduct(db, parsed.data)
     revalidatePath('/admin/products')
     return { ok: true as const, id: p.id }
-  } catch {
-    return { ok: false as const, error: '網址代稱重複了，換一個試試。' }
+  } catch (e) {
+    return { ok: false as const, error: describeWriteError(e) }
   }
+}
+
+/**
+ * 更新商品用的 schema。
+ *
+ * 不能直接用 `productInputSchema.partial()`，有兩個坑：
+ *
+ * 1. **`.partial()` 不會移除 `.default()`**。`status` 與 `sortOrder` 帶有預設值，
+ *    只想改名稱的部分更新會順手把狀態打回草稿、排序歸零（等於無聲下架）。
+ * 2. **`.partial()` 不會移除 `.refine()`**。`priceCents` 的 `> 0` 檢查會讓
+ *    「售價空白 + 沒照片 + 沒配方」只回報售價一項，A-4 要求的「一次講完缺什麼」跑不到。
+ *
+ * 所以這裡重新宣告，欄位定義與 contracts 對齊但不帶 default／refine。
+ * 售價是否合理改由 `checkReadyToPublish()` 統一把關。
+ */
+const productUpdateSchema = z.object({
+  slug: slugSchema.optional(),
+  name: z.string().trim().min(1, '請填寫手串名稱').max(100).optional(),
+  description: z.string().trim().max(2000).nullable().optional(),
+  priceCents: z.number().int('售價必須是整數分').min(0, '售價不能是負數').optional(),
+  wristSizeCm: z.number().positive('手圍必須大於 0').max(30, '手圍看起來不合理').nullable().optional(),
+  manualStock: z.number().int().min(0, '限量不能是負數').nullable().optional(),
+  sortOrder: z.number().int().optional(),
+  status: productStatusSchema.optional(),
+})
+
+/**
+ * 把寫入時的例外翻成店主看得懂的話。
+ *
+ * 不可以全部當成「網址代稱重複」——連線中斷、逾時也會走到 catch，
+ * 店主會去改一個根本沒重複的代稱，反覆失敗卻毫無線索。
+ */
+function describeWriteError(e: unknown): string {
+  const msg = e instanceof Error ? e.message : String(e)
+  if (/UNIQUE constraint failed: products\.slug/i.test(msg)) {
+    return '網址代稱重複了，換一個試試。'
+  }
+  console.error('[products] 寫入失敗:', msg)
+  return '存檔失敗，請再試一次。若持續失敗請截圖這個畫面。'
 }
 
 /**
@@ -33,17 +72,23 @@ async function checkReadyToPublish(
   db: Awaited<ReturnType<typeof getDb>>,
   id: number,
   priceCents: number | undefined,
+  /** 這次要一起存的配方有沒有內容；未傳則查資料庫現值 */
+  hasRecipe?: boolean,
 ): Promise<string | null> {
   const missing: string[] = []
 
   const [imgs, lines, current] = await Promise.all([
     db.select({ id: productImages.id }).from(productImages).where(eq(productImages.productId, id)).limit(1),
-    db.select({ id: recipes.id }).from(recipes).where(eq(recipes.productId, id)).limit(1),
+    hasRecipe === undefined
+      ? db.select({ id: recipes.id }).from(recipes).where(eq(recipes.productId, id)).limit(1)
+      : Promise.resolve([]),
     getProductById(db, id),
   ])
 
   if (imgs.length === 0) missing.push('還沒有照片，客人看不到商品長怎樣')
-  if (lines.length === 0) missing.push('還沒設定用哪些珠子，算不出成本')
+
+  const recipeOk = hasRecipe === undefined ? lines.length > 0 : hasRecipe
+  if (!recipeOk) missing.push('還沒設定用哪些珠子，算不出成本')
 
   // 這次沒送 priceCents 就看資料庫現值
   const price = priceCents ?? current?.priceCents ?? 0
@@ -53,8 +98,14 @@ async function checkReadyToPublish(
   return `還不能上架：${missing.join('；')}。`
 }
 
+/**
+ * 只更新商品欄位，不碰配方。
+ *
+ * ⚠️ 若同時要存配方，請用 `saveProductAction()`——
+ * 分開呼叫會讓配方先落地、商品驗證失敗時無法回滾。
+ */
 export async function updateProductAction(id: number, input: unknown) {
-  const parsed = productInputSchema.partial().safeParse(input)
+  const parsed = productUpdateSchema.safeParse(input)
   if (!parsed.success) return { ok: false as const, error: zodMessage(parsed.error) }
 
   const db = await getDb()
@@ -66,9 +117,8 @@ export async function updateProductAction(id: number, input: unknown) {
 
   try {
     await updateProduct(db, id, parsed.data)
-  } catch {
-    // slug 有唯一索引，重複時 D1 會丟錯
-    return { ok: false as const, error: '網址代稱重複了，換一個試試。' }
+  } catch (e) {
+    return { ok: false as const, error: describeWriteError(e) }
   }
 
   revalidatePath('/admin/products')
@@ -76,6 +126,74 @@ export async function updateProductAction(id: number, input: unknown) {
   return { ok: true as const }
 }
 
+/**
+ * 商品欄位與配方一起存。
+ *
+ * **必須先驗證完所有東西，才可以開始寫入。**
+ * `saveRecipe()` 是先刪後建，一旦跑了就無法回滾；
+ * 若讓它先跑、商品驗證後失敗（slug 重複、上架檢查擋下），
+ * 配方會被清空但畫面顯示錯誤，店主以為沒存成功——這會弄壞已上架商品。
+ *
+ * D1 沒有跨陳述句交易可用，所以用「驗證全部通過才動手」來取代交易。
+ */
+export async function saveProductAction(
+  productId: number,
+  productInput: unknown,
+  lines: unknown,
+) {
+  /* ── 1. 先驗證，全部通過才寫 ── */
+  const parsedProduct = productUpdateSchema.safeParse(productInput)
+  if (!parsedProduct.success) {
+    return { ok: false as const, error: zodMessage(parsedProduct.error) }
+  }
+
+  const parsedLines = z.array(recipeLineSchema).safeParse(lines)
+  if (!parsedLines.success) {
+    return { ok: false as const, error: zodMessage(parsedLines.error) }
+  }
+
+  const seen = new Set<number>()
+  for (const l of parsedLines.data) {
+    if (seen.has(l.beadId)) {
+      return { ok: false as const, error: '同一顆珠只能出現一次，要用幾顆請寫在數量欄。' }
+    }
+    seen.add(l.beadId)
+  }
+
+  const db = await getDb()
+
+  // 上架檢查要用「這次要存的配方」判斷，不是資料庫現值——
+  // 否則剛補上配方的同一次儲存會被誤判成「還沒設定珠子」
+  if (parsedProduct.data.status === 'active') {
+    const problem = await checkReadyToPublish(
+      db,
+      productId,
+      parsedProduct.data.priceCents,
+      parsedLines.data.length > 0,
+    )
+    if (problem) return { ok: false as const, error: problem }
+  }
+
+  /* ── 2. 驗證都過了才開始寫 ── */
+  try {
+    await updateProduct(db, productId, parsedProduct.data)
+  } catch (e) {
+    return { ok: false as const, error: describeWriteError(e) }
+  }
+  await saveRecipe(db, productId, parsedLines.data)
+
+  revalidatePath('/admin/products')
+  revalidatePath(`/admin/products/${productId}`)
+  revalidatePath('/admin/reports/purchasing')
+  return { ok: true as const }
+}
+
+/**
+ * 只存配方，不碰商品欄位。
+ *
+ * ⚠️ 若同時要改商品欄位，請用 `saveProductAction()`——
+ * `saveRecipe()` 是先刪後建無法回滾，分開呼叫有資料損壞風險。
+ */
 export async function saveRecipeAction(productId: number, lines: unknown) {
   const parsed = z.array(recipeLineSchema).safeParse(lines)
   if (!parsed.success) return { ok: false as const, error: zodMessage(parsed.error) }
@@ -190,7 +308,27 @@ export async function listProductImagesAction(productId: number) {
 export async function deleteProductImageAction(productId: number, imageId: number) {
   const db = await getDb()
   await deleteProductImage(db, imageId)
+
+  /**
+   * 刪掉最後一張照片時，已上架的商品要自動降回草稿。
+   * 不擋下刪除——店主可能正要換照片；但也不能放著無圖商品掛在前台。
+   */
+  let demoted = false
+  const product = await getProductById(db, productId)
+  if (product?.status === 'active') {
+    const left = await db
+      .select({ id: productImages.id })
+      .from(productImages)
+      .where(eq(productImages.productId, productId))
+      .limit(1)
+    if (left.length === 0) {
+      await updateProduct(db, productId, { status: 'draft' })
+      demoted = true
+    }
+  }
+
   revalidatePath('/admin/products')
   revalidatePath(`/admin/products/${productId}`)
-  return { ok: true as const }
+  revalidatePath('/admin')
+  return { ok: true as const, demoted }
 }
