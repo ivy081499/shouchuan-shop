@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { NAV } from './_shell/nav.ts'
+import { isOwnerRequest } from './_shell/access.ts'
 
 /**
  * 後台外殼
@@ -8,7 +9,9 @@ import { NAV } from './_shell/nav.ts'
  * 這裡再驗一次 Access 的身分標頭，作為第二層防護——
  * 萬一 Access 政策被誤改，這層還擋得住。
  */
-export default function AdminLayout({ children }: { children: React.ReactNode }) {
+export default async function AdminLayout({ children }: { children: React.ReactNode }) {
+  if (!(await isOwnerRequest())) return <Forbidden />
+
   return (
     <div className="min-h-screen">
       <header className="border-b border-hairline">
@@ -39,6 +42,24 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       </nav>
 
       <main className="mx-auto max-w-[1280px] px-6 py-10">{children}</main>
+    </div>
+  )
+}
+
+/** 身分不符時顯示的畫面，不渲染導覽列與內容 */
+function Forbidden() {
+  return (
+    <div className="min-h-screen flex items-center justify-center px-6">
+      <div className="max-w-md">
+        <h1 className="font-serif text-xl tracking-[0.18em] text-ink">沒有權限進入後台</h1>
+        <p className="mt-4 text-[13px] leading-relaxed text-ink-soft">
+          這個後台只開放給店主本人。你目前的登入身分不在允許名單內。
+        </p>
+        <p className="mt-2 text-[13px] leading-relaxed text-ink-soft">
+          如果你是店主，請用店主的 Google 帳號重新登入；仍然進不來的話，
+          到 Cloudflare Zero Trust 確認 Access 政策的 email 設定。
+        </p>
+      </div>
     </div>
   )
 }
