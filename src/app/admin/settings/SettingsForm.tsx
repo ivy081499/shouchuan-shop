@@ -79,9 +79,17 @@ export default function SettingsForm({ values }: { values: Record<string, string
 }
 
 function Field({ field, value }: { field: SettingField; value: string }) {
-  /* 資料庫存「分」，給店主看的是「元」 */
+  /*
+   * 資料庫存「分」，給店主看的是「元」。
+   * 金額一律整數元，所以除完直接取整——舊資料若留有非整數元的值，
+   * 顯示成整數比顯示 60.5 讓人困惑要好（存檔時也會被擋下）。
+   */
   const shown =
-    field.kind === 'money' ? (value === '' ? '' : String(Number(value) / 100)) : value
+    field.kind === 'money'
+      ? value === ''
+        ? ''
+        : String(Math.round(Number(value) / 100))
+      : value
 
   return (
     <label className="flex flex-col gap-1.5">
@@ -100,6 +108,8 @@ function Field({ field, value }: { field: SettingField; value: string }) {
           defaultValue={shown}
           placeholder={field.placeholder}
           inputMode={field.kind === 'money' || field.kind === 'digits' ? 'numeric' : undefined}
+          /* 金額與代碼都只收數字，從輸入端就擋掉小數點與符號 */
+          pattern={field.kind === 'money' || field.kind === 'digits' ? '[0-9]*' : undefined}
           className={`w-full border border-hairline bg-paper px-3 py-2 text-[13px] text-ink ${
             field.kind === 'money' || field.kind === 'digits' ? 'tnum' : ''
           }`}

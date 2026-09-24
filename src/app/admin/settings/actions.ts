@@ -29,11 +29,19 @@ export async function saveSettingsAction(formData: FormData): Promise<ActionResu
         updates.push({ key: field.key, value: '0' })
         continue
       }
+      /*
+       * 運費與免運門檻都是整數元，不會有 0.5 元這種東西。
+       * 這裡要真的擋下小數——原本只檢查「是數字且非負」，
+       * 填 60.5 會被 Math.round 悄悄變成 6050 分，店主不會發現。
+       */
+      if (!/^\d+$/.test(value)) {
+        return err(`「${field.label}」請填整數的金額，例如 60。不接受小數點。`)
+      }
       const yuan = Number(value)
-      if (!Number.isFinite(yuan) || yuan < 0) {
+      if (!Number.isSafeInteger(yuan) || yuan < 0) {
         return err(`「${field.label}」請填 0 或正整數的金額。`)
       }
-      updates.push({ key: field.key, value: String(Math.round(yuan * 100)) })
+      updates.push({ key: field.key, value: String(yuan * 100) })
       continue
     }
 
