@@ -52,16 +52,13 @@ export async function addToCartAction(
   const existing = cart.items.find((i) => i.productId === parsed.data.productId)
   const nextQty = (existing?.qty ?? 0) + parsed.data.qty
 
-  /* 先擋可售量，別讓客人結帳到最後一步才被退回來 */
-  const availability = await getAvailableQtyMap(db, [parsed.data.productId])
-  const available = availability.get(parsed.data.productId) ?? 0
-  if (nextQty > available) {
-    return err(
-      available === 0
-        ? `「${product.name}」目前沒有現貨了。`
-        : `「${product.name}」最多只能買 ${available} 條。`,
-    )
-  }
+  /*
+   * 【店主 2026-09-24 指示：庫存不足完全不擋】
+   * 客人要買幾條就買幾條，材料夠不夠由店主自己判斷與處理。
+   * 手串是做出來的不是現成的，缺料再補做就好，不該在這裡把生意擋掉。
+   * 超賣的安全網改由後台負責：`availableAtOrderTime` 存下單當下的可做條數，
+   * 後台訂單列表會標紅提醒（`isOversold`）。
+   */
 
   const items = existing
     ? cart.items.map((i) => (i.productId === parsed.data.productId ? { ...i, qty: nextQty } : i))
@@ -87,13 +84,7 @@ export async function updateCartQtyAction(
   const parsed = cartItemSchema.safeParse({ productId, qty })
   if (!parsed.success) return err(zodMessage(parsed.error))
 
-  const db = await getDb()
-  const availability = await getAvailableQtyMap(db, [productId])
-  const available = availability.get(productId) ?? 0
-  if (qty > available) {
-    return err(available === 0 ? '這條手串目前沒有現貨了。' : `最多只能買 ${available} 條。`)
-  }
-
+  /* 同 addToCartAction：庫存不足不擋，想改成幾條就幾條 */
   const cart = await readCart()
   await writeCart({
     items: cart.items.map((i) => (i.productId === productId ? { ...i, qty } : i)),
@@ -154,26 +145,28 @@ export async function placeOrderAction(formData: FormData): Promise<ActionResult
     .from(products)
     .where(inArray(products.id, ids))
 
-  /* 客人放在購物車這段時間，店主可能已經把商品下架了 */
-  const unavailable = input.items.filter(
-    (i) => !productRows.some((p) => p.id === i.productId && p.status === 'active'),
+  /*
+   * 買不到的品項（下架、或商品已被刪除）直接**剔除**，不是整張退回。
+   *
+   * 早期版本是「有一項買不到就擋下整筆」，但那樣會把客人卡死：
+   * cookie 裡若留著一個已刪除的商品 id，購物車頁面看不到它
+   * （`buildCartView()` 只顯示上架中的），客人根本不知道要移除什麼，
+   * 只會一直看到「有手串買不到了」然後無從處理。
+   * 這裡的規則與購物車頁一致：買不到的就當它不存在。
+   */
+  const sellableItems = input.items.filter((i) =>
+    productRows.some((p) => p.id === i.productId && p.status === 'active'),
   )
-  if (unavailable.length > 0) {
-    return err('購物車裡有手串已經買不到了，請回購物車確認一下。')
+  if (sellableItems.length === 0) {
+    return err('購物車裡的手串都已經買不到了，請重新挑選。')
   }
 
-  /* 送出前最後一次庫存複查：可能有人同時買走了 */
+  /*
+   * 可做條數只「記錄」不「阻擋」（店主 2026-09-24 指示）。
+   * 存進 `availableAtOrderTime` 供後台超賣示警用，缺料由店主補做。
+   * 下架商品仍然剔除——那是店主不賣了，跟缺料是兩回事。
+   */
   const availability = await getAvailableQtyMap(db, ids)
-  const shortages = input.items
-    .filter((i) => i.qty > (availability.get(i.productId) ?? 0))
-    .map((i) => {
-      const name = productRows.find((p) => p.id === i.productId)?.name ?? '手串'
-      const left = availability.get(i.productId) ?? 0
-      return left === 0 ? `「${name}」已經賣完了` : `「${name}」只剩 ${left} 條`
-    })
-  if (shortages.length > 0) {
-    return err(`${shortages.join('；')}。請回購物車調整數量後再送出。`)
-  }
 
   /* ── 成本快照：一次撈完所有配方，不要逐筆查 ── */
   const recipeRows = await db
@@ -189,7 +182,7 @@ export async function placeOrderAction(formData: FormData): Promise<ActionResult
         .map((r) => ({ beadId: 0, qty: r.qty, unitCostCents: r.unitCostCents })),
     )
 
-  const lines = input.items.map((i) => {
+  const lines = sellableItems.map((i) => {
     const p = productRows.find((r) => r.id === i.productId)!
     const unitCostCents = unitCostOf(i.productId)
     return {

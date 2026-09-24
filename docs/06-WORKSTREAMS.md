@@ -107,6 +107,8 @@ src/app/api/admin/orders/**
 src/lib/order-status.ts      （狀態機守衛，S4 擁有）
 ```
 **產出**：訂單列表／詳情、確認收款、出貨填單號、超賣紅字警示、取消訂單。
+**2026-09-24 完成 S4-01～S4-05**（店主指示與階段 C 一起做完；S4-06 儀表板未做）。
+實際邏輯全部呼叫凍結的 `src/data/orders.ts`，actions 只驗證輸入與轉譯訊息。
 
 ---
 
@@ -144,7 +146,7 @@ Phase 0 已經**預先登記**所有跨工作流的接點，所以 S4 新增訂�
 
 | 預先登記的東西 | 位置 |
 |---|---|
-| 後台導覽列所有項目 | `src/app/admin/_shell/nav.ts` |
+| 後台導覽列所有項目 | `src/app/admin/_shell/nav.ts`（2026-09-14、09-24 各有一次例外變更，理由寫在檔案開頭） |
 | 訂單狀態列舉 | `db/schema.ts` 的 `orders.status` |
 | 報表類型列舉 | `src/contracts/report.ts` |
 | 共用元件的 props 簽名 | `src/ui/**`（S1 只填樣式，不改簽名） |

@@ -3,6 +3,8 @@
 import { useState } from 'react'
 import { getOrderSnapshot } from './actions.ts'
 import { formatTWD } from '@/lib/money'
+import type { OrderStatusValue } from '@/contracts/order'
+import OrderActions from './OrderActions.tsx'
 
 interface Snapshot {
   items: Array<{
@@ -30,12 +32,24 @@ interface Snapshot {
  */
 export default function OrderRow({
   orderId,
+  orderNo,
+  status,
   stockDeducted,
+  shippingAddress,
+  customerPhone,
+  customerNote,
+  trackingNo,
   children,
   colSpan,
 }: {
   orderId: number
+  orderNo: string
+  status: OrderStatusValue
   stockDeducted: boolean
+  shippingAddress: string
+  customerPhone: string
+  customerNote: string | null
+  trackingNo: string | null
   children: React.ReactNode
   colSpan: number
 }) {
@@ -79,6 +93,34 @@ export default function OrderRow({
             onClick={(e) => e.stopPropagation()}
             className="border-b border-hairline bg-sunk px-4 py-4"
           >
+            {/*
+              操作按鈕與收件資訊不等 snapshot 載入——
+              店主展開多半就是要出貨或確認收款，不該等圖片查詢跑完。
+            */}
+            <div className="mb-4 space-y-3">
+              <OrderActions orderId={orderId} orderNo={orderNo} status={status} />
+
+              <div className="text-[12px] leading-relaxed">
+                <div className="text-[11px] tracking-[0.15em] text-ink-soft">收件資訊</div>
+                <div className="mt-1">
+                  {shippingAddress}
+                  <span className="tnum text-ink-soft">　{customerPhone}</span>
+                </div>
+                {customerNote && (
+                  <div className="mt-1">
+                    <span className="text-ink-soft">備註　</span>
+                    {customerNote}
+                  </div>
+                )}
+                {trackingNo && (
+                  <div className="tnum mt-1">
+                    <span className="text-ink-soft">物流單號　</span>
+                    {trackingNo}
+                  </div>
+                )}
+              </div>
+            </div>
+
             {loading ? (
               <div className="text-[13px] text-ink-soft">讀取中…</div>
             ) : !snap ? null : (

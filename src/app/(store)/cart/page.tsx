@@ -63,18 +63,13 @@ export default async function CartPage() {
         </p>
       )}
 
-      {view.hasShortage ? (
-        <p className="mt-8 border border-hairline bg-sunk px-4 py-3 text-[13px] text-alert">
-          購物車裡有數量不足的手串，調整之後才能結帳。
-        </p>
-      ) : (
-        <Link
-          href="/checkout"
-          className="mt-8 block border border-ink bg-ink py-3 text-center text-[13px] tracking-[0.2em] text-paper hover:border-accent hover:bg-accent"
-        >
-          前往結帳
-        </Link>
-      )}
+      {/* 庫存不足不擋結帳（店主 2026-09-24 指示），缺料由店主補做 */}
+      <Link
+        href="/checkout"
+        className="mt-8 block border border-ink bg-ink py-3 text-center text-[13px] tracking-[0.2em] text-paper hover:border-accent hover:bg-accent"
+      >
+        前往結帳
+      </Link>
 
       <Link
         href="/"

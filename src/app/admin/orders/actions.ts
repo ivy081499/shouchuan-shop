@@ -1,9 +1,17 @@
 'use server'
 
+import { revalidatePath } from 'next/cache'
 import { getDb, getPublicImageBase } from '@/data/db'
-import { getOrderItems } from '@/data/orders'
+import {
+  getOrderItems,
+  confirmPaymentAndDeductStock,
+  shipOrder,
+  cancelOrder,
+} from '@/data/orders'
 import { stockLedger, beads, productImages } from '@db/schema'
 import { eq, and, asc, inArray } from 'drizzle-orm'
+import { ok, err, zodMessage, type ActionResult } from '@/contracts/common'
+import { confirmPaymentSchema, shipOrderSchema, cancelOrderSchema } from '@/contracts/order'
 
 /**
  * 某張訂單「當時」的用料與成本。
@@ -79,4 +87,73 @@ export async function getOrderSnapshot(orderId: number) {
     /** deltaQty 是負數（扣庫存），轉成正的顆數比較好讀 */
     usage: usage.map((u) => ({ ...u, qty: Math.abs(u.qty) })),
   }
+}
+
+/* ────────────────────────────────────────────────────────────
+   收款、出貨、取消（2026-09-24 補上，S4-03～S4-05）
+
+   實際邏輯全部在凍結的 `src/data/orders.ts`——扣庫存、回補庫存、
+   寫 stock_ledger、狀態機守衛都在那裡。這裡只驗證輸入與轉譯訊息，
+   不要在這個檔案裡重新實作任何一段。
+   ──────────────────────────────────────────────────────────── */
+
+/**
+ * 確認收款 → 扣庫存。
+ *
+ * 【冪等】重複按不會重複扣（凍結層以 `stockDeducted` 旗標處理）。
+ * 庫存不足時整筆擋下並說明缺哪一顆，不會把庫存扣成負數。
+ */
+export async function confirmPaymentAction(
+  orderId: number,
+  note?: string,
+): Promise<ActionResult<void>> {
+  const parsed = confirmPaymentSchema.safeParse({ orderId, note: note || undefined })
+  if (!parsed.success) return err(zodMessage(parsed.error))
+
+  const db = await getDb()
+  const result = await confirmPaymentAndDeductStock(db, parsed.data.orderId, parsed.data.note)
+  if (!result.ok) return err(result.error)
+
+  revalidatePath('/admin/orders')
+  revalidatePath('/admin')
+  return ok(undefined)
+}
+
+/**
+ * 出貨，填物流單號。
+ * 【不變量】還沒確認收款的訂單不得出貨——凍結層會擋。
+ */
+export async function shipOrderAction(
+  orderId: number,
+  trackingNo: string,
+): Promise<ActionResult<void>> {
+  const parsed = shipOrderSchema.safeParse({ orderId, trackingNo })
+  if (!parsed.success) return err(zodMessage(parsed.error))
+
+  const db = await getDb()
+  const result = await shipOrder(db, parsed.data.orderId, parsed.data.trackingNo)
+  if (!result.ok) return err(result.error)
+
+  revalidatePath('/admin/orders')
+  return ok(undefined)
+}
+
+/**
+ * 取消訂單。
+ * 【不變量】已扣庫存的訂單取消時會把料加回去並寫 stock_ledger——凍結層處理。
+ */
+export async function cancelOrderAction(
+  orderId: number,
+  reason: string,
+): Promise<ActionResult<void>> {
+  const parsed = cancelOrderSchema.safeParse({ orderId, reason })
+  if (!parsed.success) return err(zodMessage(parsed.error))
+
+  const db = await getDb()
+  const result = await cancelOrder(db, parsed.data.orderId, parsed.data.reason)
+  if (!result.ok) return err(result.error)
+
+  revalidatePath('/admin/orders')
+  revalidatePath('/admin')
+  return ok(undefined)
 }

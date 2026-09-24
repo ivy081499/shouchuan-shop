@@ -60,8 +60,6 @@ function CartRow({ line, imageBase }: { line: CartLineView; imageBase: string })
     })
   }
 
-  const short = line.qty > line.availableQty
-
   return (
     <li className="flex gap-4 border-b border-hairline py-6 sm:gap-6">
       <Link href={`/p/${line.slug}`} className="shrink-0">
@@ -108,18 +106,9 @@ function CartRow({ line, imageBase }: { line: CartLineView; imageBase: string })
         </div>
 
         {/*
-          缺貨提示只在真的買不到時出現。
-          店主指示前台平常不顯示庫存數字，但結帳前擋不下來會讓客人白跑一趟，
-          所以這裡是例外：只講「剩幾條」，不講完整庫存。
+          店主 2026-09-24 指示：庫存不足完全不擋，前台也不提。
+          缺料由店主自己補做，客人不需要知道還剩幾條。
         */}
-        {short && (
-          <p className="text-[13px] text-alert">
-            {line.availableQty === 0
-              ? '這條已經沒有了，請先移除再結帳。'
-              : `目前只剩 ${line.availableQty} 條，請調整數量。`}
-          </p>
-        )}
-
         {error && <p className="text-[13px] text-alert">{error}</p>}
       </div>
     </li>

@@ -14,8 +14,8 @@ export default async function CheckoutPage() {
   const cart = await readCart()
   const [view, settings] = await Promise.all([buildCartView(cart), getStoreSettings()])
 
-  /* 空車或數量不足就回購物車處理，不要讓人在結帳頁卡住 */
-  if (view.lines.length === 0 || view.hasShortage) redirect('/cart')
+  /* 只有空車才退回購物車；庫存不足不擋（店主 2026-09-24 指示） */
+  if (view.lines.length === 0) redirect('/cart')
 
   return (
     <div className="mx-auto max-w-[720px]">
