@@ -50,3 +50,19 @@ html, body {
     transition-duration: .01ms !important;
   }
 }
+
+/**
+ * 前台樣式
+ *
+ * 前台是「展示」不是工具：留白多、字級大一點、行距寬。
+ * 與後台共用色票，版面邏輯獨立（見 docs/05-DESIGN-SYSTEM.md）。
+ */
+.store {
+  font-size: 15px;
+  line-height: 1.9;
+}
+
+/* 商品故事保留店主輸入的換行 */
+.store-prose {
+  white-space: pre-wrap;
+}

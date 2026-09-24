@@ -39,8 +39,9 @@
 | [0004](ADR-0004-stock-deduct-on-payment.md) | 付款確認才扣庫存（接受超賣風險） | 已採用 |
 | [0005](ADR-0005-schema-freeze.md) | Schema 凍結與解凍程序 | 已採用 |
 | [0006](ADR-0006-import-requires-confirmation.md) | 匯入必須人工逐列確認 | 已採用 |
-| [0007](ADR-0007-no-customer-login.md) | 前台訪客結帳，不做客戶登入 | 前台部分被 0008 取代 |
-| [0008](ADR-0008-freestore-for-storefront.md) | **前台改用 FreeStore，本系統專注後台** | 已採用 |
+| [0007](ADR-0007-no-customer-login.md) | 前台訪客結帳，不做客戶登入 | 部分被 0012 取代（改為「可選會員」） |
+| [0008](ADR-0008-freestore-for-storefront.md) | 前台改用 FreeStore，本系統專注後台 | **前台部分被 0012 取代** |
 | [0009](ADR-0009-brand-name.md) | 品牌名稱：平凡生活 / Ordinary Days | 已採用 |
 | [0010](ADR-0010-recipe-bead-picker.md) | 配方編輯器選珠：搜尋、分類、庫存0可選、縮圖 | 已採用 |
 | [0011](ADR-0011-customs-duty.md) | **關稅攤提與進貨隔離流程** | 已採用 |
+| [0012](ADR-0012-build-own-storefront.md) | **自建前台，FreeStore 轉為過渡並行** | 已採用（規劃中，尚未實作） |

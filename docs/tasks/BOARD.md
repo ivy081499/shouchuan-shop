@@ -36,6 +36,23 @@
 - [ ] P1-01 設計 token（後台用，資訊密度優先）
 - [ ] P1-02 基礎元件：表格、表單、按鈕、對話框、警示
       （原「商品頁視覺稿」已隨前台取消而移除，見 ADR-0008）
+- [ ] **P1-03 後台設定頁（店主改不了店名與匯款帳號，前台上線前必須補）**
+      2026-09-23 階段 B 稽核發現：**後台完全沒有寫入 `settings` 的介面。**
+      目前只有 `/admin/inventory` 讀一個匯率 key，其餘全靠改 `seed.sql` 或直接下 SQL。
+      店主是非工程背景，等於**店名、匯款帳號、聯絡方式全部改不了**。
+
+      前台頁尾要顯示匯款資訊與聯絡方式，資料都讀 `settings`（沒有寫死），
+      所以這個缺口會直接顯示在客人眼前：匯款欄位空著，客人不知道錢匯去哪。
+
+      要做的事：
+      1. 新增 `/admin/settings` 頁，可編輯既有的 key（`label` 欄位已經有給店主看的說明）
+      2. **`settings` 表需要三個新 key**（key-value 表新增 key **不需要改 schema**）：
+         `contact_email`、`contact_line`、`contact_instagram`
+         前台 `(store)/layout.tsx` 已經寫好對應的顯示，三個都沒填就整區不顯示。
+      3. 導覽項要加「設定」——但 `src/app/admin/_shell/nav.ts` 是**凍結檔**，
+         需由主控 session 修改。
+
+      ⚠️ 不屬於 S6（前台）的可寫路徑，前台工作流不能自己做。
 
 ---
 
@@ -120,13 +137,74 @@
   採購需求 `getPurchasingReport()` **維持排除**棄用料（都棄用了不該再叫貨）。
   毛利報表本來就沒排除（從訂單回推配方成本），不受影響。
 
+- [ ] **新增 `customers` 表 + `orders.customer_id`** — 自建前台的會員功能
+  **尚未核准，動手前要先問店主。** 見 `docs/decisions/ADR-0012`。
+
+  ```
+  customers
+    id, google_sub（Google 使用者唯一 id，唯一索引）, email,
+    name, picture_url, created_at, updated_at
+
+  orders 增 customer_id（可為 null，null = 訪客下單）
+  ```
+
+  會員一律用 Google 登入、**不自建密碼**，所以不需要密碼相關欄位。
+  `customer_id` 必須允許 null——訪客不註冊也能下單，這是店主定的規則。
+
+  ⚠️ 這是**真正的 schema 變更，會產生 migration**，與上一筆（只改查詢條件）不同。
+  必須另開 schema session，且確認沒有其他工作流同時進行，避免污染 D1。
+
+  **只有前台階段 D 需要**。階段 A／B／C 都不依賴它，可以先做完再回來處理。
+
+---
+
+## ⚠️ 已知問題（不是這次改的，但要記著）
+
+- [ ] **商品設成「已售完」會從前台整個消失** — 2026-09-24 稽核發現
+  `listStoreProducts()` 與詳情頁都只認 `status = 'active'`，
+  後台把商品改成 `sold_out` 之後，前台列表看不到、詳情頁直接 404。
+  客人點舊連結會看到「找不到」，而不是「這條賣完了」。
+  **這是階段 B 原本就有的行為，不是後來改出來的。**
+  店主已指示前台不顯示庫存資訊，所以要不要讓售完商品留在前台、
+  以及留下來要顯示什麼，**需要店主決定**，不要自己假設。
+
 ---
 
 ## 📦 套件需求
 
 > 需要 `npm install` 新套件的，寫在這裡，不要自己裝。
 
-（目前無）
+- [ ] **寄信服務 SDK（Resend 或同類）** — 自建前台階段 C
+  訂單確認信。**Cloudflare Workers 沒有 SMTP**，只能用 HTTP API 寄信。
+  MailChannels 2024 起對 Workers 收費，Email Routing 只能收不能發。
+  Resend 免費 3,000 封／月，足夠。需先申請帳號並驗證寄件網域。
+  見 `docs/decisions/ADR-0012`、`docs/10-前台與上架計畫.md`。
+
+- [ ] **Google OAuth id_token 驗證套件** — 自建前台階段 D
+  會員登入一律走 Google，不自建密碼。需要驗證 Google 回傳的 id_token 簽章。
+  手刻容易出錯，建議用現成套件。階段 D 才需要，C 之前不必裝。
+
+- [x] **圖片壓縮** — 自建前台階段 B-4 ✅ **2026-09-24 完成，最後沒有裝套件**
+  採用下表「瀏覽器端 Canvas 壓縮」那條：`src/app/admin/products/[id]/compressImage.ts`。
+  實測 3000×2000 / 4.33MB → 1600×1067 / 70KB webp。commit 9c4f430。
+  sharp 這條已排除：Workers 不支援原生二進位模組。
+
+  <details><summary>當時的評估（留存）</summary>
+  `docs/10-前台與上架計畫.md` 的 B-4 要求「上傳時壓為 webp、長邊上限 1600px」，
+  現行上傳（`src/app/admin/products/actions.ts`）原樣寫檔，沒有壓縮。
+  單張上限 5MB，店主若放手機原圖，列表頁一次載十幾張會吃掉 Workers 免費額度。
+
+  **階段 B 的其餘部分（B-1～B-3）不依賴它，已先完成。**
+  店主 2026-09-23 選擇「先做看得到的，壓縮另外登記」。三個做法：
+
+  | 做法 | 要裝套件 | 備註 |
+  |---|---|---|
+  | sharp 等影像套件 | 是 | 品質最好；但 Workers 執行環境未必支援原生模組，要先驗證 |
+  | 瀏覽器端 Canvas 壓縮 | 否 | 上傳前在店主瀏覽器壓好再送出，要改後台上傳程式 |
+  | Cloudflare Images | 否（付費服務） | 超出零成本原則 |
+
+  **壓縮屬於上傳端（後台），不是前台顯示**，所以不擋階段 C。
+  </details>
 
 
 ---

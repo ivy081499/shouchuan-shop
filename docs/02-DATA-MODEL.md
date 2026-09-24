@@ -56,7 +56,8 @@ settings（獨立的 key-value）
 ### `products` / `recipes` — 手串與配方
 - `manualStock` 為 null 時，可售量由配方與庫存動態計算（見 `calcBuildableQty`）。
 - `recipes` 的 `(productId, beadId)` 唯一 → 同一顆珠在一條手串只會有一列，數量寫在 `qty`。
-- `position` 是珠子在手串上的排列順序，前台「配方透視」依此繪製。
+- `position` 是珠子在手串上的排列順序。
+  （原本供前台「配方透視」繪製，該功能已於 2026-09-24 依店主指示移除；欄位保留。）
 
 ### `orders` / `order_items` — 訂單
 - `orderNo` 對外顯示，格式 `SC-YYMMDD-XXXX`；`id` 絕不外露。
