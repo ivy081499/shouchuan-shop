@@ -25,7 +25,8 @@ export async function getProductBySlug(db: Db, slug: string) {
 
 /**
  * 取得配方（含珠子資料）。
- * 配方透視（前台 signature 元素）與成本計算都用這個。
+ * 後台配方編輯與成本計算都用這個。
+ * （前台的「配方透視」已於 2026-09-24 依店主指示移除，不再是使用者。）
  */
 export async function getRecipe(db: Db, productId: number): Promise<RecipeBeadView[]> {
   return db
