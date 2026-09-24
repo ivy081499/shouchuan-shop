@@ -7,7 +7,6 @@ import { getProductDetail } from '@/data/products'
 import { formatTWD } from '@/lib/money'
 import { getPublicImageBase, imageUrl } from '../../store.ts'
 import Gallery from '../../_components/Gallery.tsx'
-import RecipeXray from '../../_components/RecipeXray.tsx'
 
 export const dynamic = 'force-dynamic'
 
@@ -45,7 +44,6 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
   const [product, imageBase] = await Promise.all([loadPublished(slug), getPublicImageBase()])
   if (!product) notFound()
 
-  const soldOut = product.availableQty <= 0
   const images = product.images.map((img) => ({
     url: imageUrl(img.r2Key, imageBase),
     alt: img.alt,
@@ -75,12 +73,6 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
                   <dd className="tnum text-ink">{product.wristSizeCm} 公分</dd>
                 </div>
               )}
-              <div className="flex gap-2">
-                <dt>目前</dt>
-                <dd className={soldOut ? 'text-ink' : 'tnum text-ink'}>
-                  {soldOut ? '已售完' : `還有 ${product.availableQty} 條`}
-                </dd>
-              </div>
             </dl>
           </header>
 
@@ -90,14 +82,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
             </p>
           )}
 
-          <RecipeXray recipe={product.recipe} />
 
-          {/* 購物車是階段 C，這裡先說明怎麼買 */}
-          <p className="border-t border-hairline pt-5 text-[13px] text-ink-soft">
-            {soldOut
-              ? '這條已經有人帶走了。同款可以再做，但天然石每批顏色不會完全一樣。'
-              : '線上購買功能準備中，想要這條請先與我聯絡。'}
-          </p>
         </div>
       </div>
     </article>

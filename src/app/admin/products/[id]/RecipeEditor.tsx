@@ -6,6 +6,7 @@ import {
   uploadProductImages,
   deleteProductImageAction,
 } from '../actions.ts'
+import { compressImage } from './compressImage.ts'
 import { formatTWD, yuanToCents } from '@/lib/money'
 import { calcProductCost, calcMargin, calcBuildableQty } from '@/lib/costing'
 
@@ -336,9 +337,11 @@ export default function RecipeEditor({
     setError(null)
     setMsg(null)
     setUploading(true)
-    const fd = new FormData()
-    for (const f of Array.from(files)) fd.append('files', f)
     startTransition(async () => {
+      // 先在瀏覽器壓成 webp 再送出：Workers 壓不了圖，理由見 compressImage.ts
+      const fd = new FormData()
+      for (const f of Array.from(files)) fd.append('files', await compressImage(f))
+
       const r = await uploadProductImages(productId, fd)
       if (!r.ok) {
         setError(r.error)
@@ -1053,6 +1056,20 @@ export default function RecipeEditor({
 
       {/* ── 儲存列固定在底部，捲到哪都能存 ── */}
       <div className="fixed inset-x-0 bottom-0 z-40 border-t border-hairline bg-paper/95 backdrop-blur">
+        {/*
+          存不成功的原因要出現在「按鈕旁邊」。
+          頁面上方那則留著（捲上去也看得到），但店主是在這裡按儲存的——
+          訊息只印在上方的話，畫面只會顯示按鈕變灰加一句「有未儲存的改動」，
+          完全看不出為什麼存不了。
+        */}
+        {error && (
+          <div
+            role="alert"
+            className="border-t-2 border-alert bg-alert/5 px-6 py-3 text-[13px] text-ink"
+          >
+            {error}
+          </div>
+        )}
         <div className="mx-auto flex max-w-[1400px] flex-wrap items-center justify-end gap-4 px-6 py-3">
           {dirty && <span className="mr-auto text-[12px] text-accent">有未儲存的改動</span>}
           {!dirty && msg && <span className="mr-auto text-[12px] text-ink-soft">{msg}</span>}

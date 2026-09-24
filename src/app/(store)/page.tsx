@@ -22,7 +22,6 @@ export default async function StoreHomePage() {
     /* 商品之間距離刻意拉寬，讓每條手串像展品 */
     <ul className="grid grid-cols-1 gap-x-10 gap-y-16 sm:grid-cols-2 lg:grid-cols-3">
       {products.map((p) => {
-        const soldOut = p.availableQty <= 0
         return (
           <li key={p.id}>
             <Link href={`/p/${p.slug}`} className="group block">
@@ -32,16 +31,11 @@ export default async function StoreHomePage() {
                     src={imageUrl(p.coverImageKey, imageBase)}
                     alt={p.name}
                     loading="lazy"
-                    className={`h-full w-full object-cover ${soldOut ? 'opacity-45' : ''}`}
+                    className="h-full w-full object-cover"
                   />
                 ) : (
                   <span className="flex h-full items-center justify-center text-[11px] tracking-[0.2em] text-ink-soft">
                     準備中
-                  </span>
-                )}
-                {soldOut && (
-                  <span className="absolute bottom-0 left-0 bg-paper/90 px-3 py-1.5 text-[11px] tracking-[0.2em] text-ink-soft">
-                    已售完
                   </span>
                 )}
               </div>
