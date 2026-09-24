@@ -4,11 +4,13 @@ import { revalidatePath } from 'next/cache'
 import { getDb, getPublicImageBase } from '@/data/db'
 import {
   getOrderItems,
+  getOrderById,
+  expandOrderToBeadDemand,
   confirmPaymentAndDeductStock,
   shipOrder,
   cancelOrder,
 } from '@/data/orders'
-import { stockLedger, beads, productImages } from '@db/schema'
+import { stockLedger, beads, productImages, orders } from '@db/schema'
 import { eq, and, asc, inArray } from 'drizzle-orm'
 import { ok, err, zodMessage, type ActionResult } from '@/contracts/common'
 import { confirmPaymentSchema, shipOrderSchema, cancelOrderSchema } from '@/contracts/order'
@@ -100,8 +102,23 @@ export async function getOrderSnapshot(orderId: number) {
 /**
  * 確認收款 → 扣庫存。
  *
- * 【冪等】重複按不會重複扣（凍結層以 `stockDeducted` 旗標處理）。
- * 庫存不足時整筆擋下並說明缺哪一顆，不會把庫存扣成負數。
+ * 【冪等】重複按不會重複扣。
+ *
+ * 【店主 2026-09-24 指示：庫存不足也不擋】
+ * 錢收到了就是收到了，缺料店主自己看採購需求表去叫貨，不要在這裡攔他。
+ *
+ * 凍結層的 `confirmPaymentAndDeductStock()` 庫存不足時會整筆拒絕，
+ * 所以缺料的情況改走這裡的 `deductAllowingNegative()`：
+ * **讓庫存扣成負數**。
+ *
+ * 為什麼是負數而不是「自動補料到剛好夠」：
+ * 補料等於憑空生出店主沒買的珠子，採購需求表就看不到缺口了——
+ * 那正好毀掉店主唯一用來決定叫多少貨的報表。
+ * 負庫存則是誠實的帳：缺 20 顆就顯示 −20，
+ * 採購需求表會把這 20 顆算進「要叫」（`calcShortages` 的公式天然成立：
+ * 需求 + 安全庫存 −(−20) 會把缺口加回來）。
+ *
+ * 庫存充足時仍然走凍結層，行為完全不變。
  */
 export async function confirmPaymentAction(
   orderId: number,
@@ -111,12 +128,98 @@ export async function confirmPaymentAction(
   if (!parsed.success) return err(zodMessage(parsed.error))
 
   const db = await getDb()
-  const result = await confirmPaymentAndDeductStock(db, parsed.data.orderId, parsed.data.note)
-  if (!result.ok) return err(result.error)
+  const { orderId: id, note: adminNote } = parsed.data
+
+  const result = await confirmPaymentAndDeductStock(db, id, adminNote)
+
+  /*
+   * 凍結層只在「庫存不足」這一種情況回傳失敗訊息以「庫存不足」開頭。
+   * 其他失敗（找不到訂單、狀態不對）是真的錯誤，照樣回報。
+   */
+  if (!result.ok) {
+    if (!result.error.startsWith('庫存不足')) return err(result.error)
+    const fallback = await deductAllowingNegative(db, id, adminNote)
+    if (!fallback.ok) return err(fallback.error)
+  }
 
   revalidatePath('/admin/orders')
   revalidatePath('/admin')
+  revalidatePath('/admin/reports/purchasing')
+  revalidatePath('/admin/inventory')
   return ok(undefined)
+}
+
+/**
+ * 庫存不足時的扣料：照扣，允許扣成負數。
+ *
+ * 除了「不檢查夠不夠」之外，其餘與凍結層的
+ * `confirmPaymentAndDeductStock()` 完全一致——一樣寫 `stock_ledger`、
+ * 一樣設 `stockDeducted` 與 `paidAt`、一樣冪等。
+ * 負數的那幾顆會在 `stock_ledger` 留下 `balance_after` 為負的紀錄，
+ * 對帳時看得出來是哪張訂單超賣的。
+ */
+async function deductAllowingNegative(
+  db: Awaited<ReturnType<typeof getDb>>,
+  orderId: number,
+  note?: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const order = await getOrderById(db, orderId)
+  if (!order) return { ok: false, error: '找不到這張訂單。' }
+
+  const now = Math.floor(Date.now() / 1000)
+
+  /* 已經扣過就只更新狀態，不重複扣 */
+  if (order.stockDeducted) {
+    await db
+      .update(orders)
+      .set({ status: 'paid', paidAt: order.paidAt ?? now, updatedAt: now })
+      .where(eq(orders.id, orderId))
+    return { ok: true }
+  }
+
+  const items = await getOrderItems(db, orderId)
+  const demand = await expandOrderToBeadDemand(
+    db,
+    items.map((i) => ({ productId: i.productId, qty: i.qty })),
+  )
+
+  if (demand.size > 0) {
+    const rows = await db
+      .select({ id: beads.id, stockQty: beads.stockQty })
+      .from(beads)
+      .where(inArray(beads.id, [...demand.keys()]))
+
+    for (const b of rows) {
+      const need = demand.get(b.id) ?? 0
+      if (need <= 0) continue
+      const after = b.stockQty - need
+      await db.update(beads).set({ stockQty: after, updatedAt: now }).where(eq(beads.id, b.id))
+      await db.insert(stockLedger).values({
+        beadId: b.id,
+        deltaQty: -need,
+        balanceAfter: after,
+        reason: 'order_paid',
+        refId: orderId,
+        note:
+          after < 0
+            ? `訂單 ${order.orderNo} 確認收款（料不夠，庫存為負，要補貨）`
+            : `訂單 ${order.orderNo} 確認收款`,
+      })
+    }
+  }
+
+  await db
+    .update(orders)
+    .set({
+      status: 'paid',
+      paidAt: now,
+      stockDeducted: true,
+      adminNote: note ?? order.adminNote,
+      updatedAt: now,
+    })
+    .where(eq(orders.id, orderId))
+
+  return { ok: true }
 }
 
 /**

@@ -179,6 +179,34 @@
 
 ## ⚠️ 已知問題（不是這次改的，但要記著）
 
+- [x] **採購需求把已扣料的訂單重複計算** — ✅ 2026-09-24 發現並修正
+  `src/data/reports.ts` 的 `getPurchasingReport()` 把「所有未出貨訂單」都算成需求，
+  包括**已經確認收款、料早就從庫存扣掉**的那些。同一批料被算兩次：
+  一次反映在庫存減少，一次又出現在需求裡。
+
+  實測：庫存 12 顆、一張已扣料訂單用 8 顆、一張未扣料訂單要 20 顆
+  → 正確答案是叫 8 顆，舊算法叫你買 **16 顆，足足多一倍**。
+
+  `src/data/reports.ts` 是凍結檔不能改，因此在
+  `src/app/admin/reports/purchasing/purchasing.ts` 重寫一份
+  `getPurchasingReportFixed()`：**只有 `stock_deducted = 0` 的訂單才算需求**。
+  公式本身仍呼叫凍結的 `calcShortages()`，沒有另寫一套。
+  採購需求頁與總覽頁都已改用修正版。
+
+  ⚠️ **凍結層的 `getPurchasingReport()` 仍是錯的，不要再拿來用。**
+  哪天開 schema session 時應該把修正併回 `src/data/reports.ts`，
+  然後刪掉這個覆蓋版。
+
+- [ ] **`getInventoryReport()` 的 `isLow` 漏掉負庫存** — 2026-09-24 發現，未修
+  `isLow` 的條件是 `reorderPoint > 0 && stockQty <= reorderPoint`，
+  沒設安全庫存的珠子就算欠到 −5 顆也不會被標記為低庫存。
+  這是凍結檔 `src/data/reports.ts`，沒有改。
+  **影響有限**：總覽頁已改成自己算 `stockQty < 0` 來顯示「X 種已經欠料」，
+  採購需求表也照列（公式天然涵蓋負庫存）。
+  真正該修的地方是凍結層，留給 schema session 一起處理。
+
+
+
 - [ ] **商品設成「已售完」會從前台整個消失** — 2026-09-24 稽核發現
   `listStoreProducts()` 與詳情頁都只認 `status = 'active'`，
   後台把商品改成 `sold_out` 之後，前台列表看不到、詳情頁直接 404。

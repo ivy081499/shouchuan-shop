@@ -1,5 +1,5 @@
 import { getDb } from '@/data/db'
-import { getPurchasingReport } from '@/data/reports'
+import { getPurchasingReportFixed } from './purchasing.ts'
 import { PageTitle, Table, Th, Td, Money, Empty, Stat } from '@/ui'
 
 export const dynamic = 'force-dynamic'
@@ -16,10 +16,22 @@ export default async function PurchasingPage({
   searchParams: Promise<{ unpaid?: string }>
 }) {
   const params = await searchParams
-  const includeUnpaid = params.unpaid === '1'
+  /*
+   * 【預設納入未付款訂單】（店主 2026-09-24 指示「庫存不足完全不擋」之後改的）
+   *
+   * 原本預設是「不含尚未轉帳的」，那在「缺貨就擋下單」的年代是對的：
+   * 沒庫存根本下不了單，未付款訂單的料一定都還在。
+   *
+   * 現在客人可以在沒料的情況下直接下單，**新進來的訂單絕大多數就是未付款的**，
+   * 那正是店主最需要叫貨的那一批。預設藏起來的話，
+   * 店主打開這頁會看到「目前不需要叫貨」，然後照樣缺料。
+   *
+   * 要看「只算已收款的」仍然可以點按鈕切換。
+   */
+  const includeUnpaid = params.unpaid !== '0'
 
   const db = await getDb()
-  const report = await getPurchasingReport(db, includeUnpaid)
+  const report = await getPurchasingReportFixed(db, includeUnpaid)
 
   const totalBeads = report.groups.reduce(
     (s, g) => s + g.lines.reduce((ls, l) => ls + l.shortageQty, 0),
@@ -28,20 +40,20 @@ export default async function PurchasingPage({
 
   return (
     <>
-      <PageTitle note="依未出貨訂單展開配方，扣掉現有庫存，算出還要跟哪家店叫多少貨。">
+      <PageTitle note="依未出貨訂單展開配方，扣掉現有庫存，再加上安全庫存，算出還要跟哪家店叫多少貨。預設把還沒轉帳的訂單也算進來。">
         採購需求
       </PageTitle>
 
       <div className="mb-6 flex flex-wrap items-center gap-4 text-[13px]">
         <a
-          href={includeUnpaid ? '?' : '?unpaid=1'}
+          href={includeUnpaid ? '?unpaid=0' : '?'}
           className="border border-hairline px-4 py-2 text-ink-soft hover:border-accent hover:text-accent"
         >
-          {includeUnpaid ? '✓ 已納入未付款訂單' : '納入未付款訂單'}
+          {includeUnpaid ? '改成只算已收款的訂單' : '← 改回納入所有未出貨訂單'}
         </a>
         <span className="text-ink-soft">
-          目前計入 {report.orderCount} 張未出貨訂單
-          {includeUnpaid ? '（含尚未轉帳的）' : '（不含尚未轉帳的）'}
+          目前計入 {report.orderCount} 張還要備料的訂單
+          {includeUnpaid ? '（含還沒轉帳的）' : '（只算已收款的）'}
         </span>
       </div>
 
@@ -61,7 +73,7 @@ export default async function PurchasingPage({
           hint={
             report.orderCount === 0
               ? '還沒有未出貨的訂單。等訂單進來後，這裡會列出該補的珠子。'
-              : '現有庫存足夠完成所有未出貨訂單。'
+              : '現有庫存足夠完成所有未出貨訂單，也都在安全庫存之上。'
           }
         />
       ) : (

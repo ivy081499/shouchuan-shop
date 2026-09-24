@@ -80,8 +80,9 @@ export default async function MarginPage() {
               {buildable.map((b) => (
                 <tr key={b.productId}>
                   <Td>{b.productName}</Td>
-                  <Td align="right" numeric alert={b.buildableQty === 0}>
-                    {b.buildableQty}
+                  {/* 超賣後庫存可能為負，可做條數會算成負數——顯示 0 並照樣標紅 */}
+                  <Td align="right" numeric alert={b.buildableQty <= 0}>
+                    {Math.max(0, b.buildableQty)}
                   </Td>
                   <Td>{b.limitingBeadName ?? '未設配方'}</Td>
                 </tr>

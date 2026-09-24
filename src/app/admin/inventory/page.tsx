@@ -25,7 +25,13 @@ export default async function InventoryPage() {
   const active = beads.filter((b) => !b.isArchived)
   const totalQty = active.reduce((s, b) => s + b.stockQty, 0)
   // 安全庫存為 0 代表不提醒，要排除
-  const lowStock = active.filter((b) => b.reorderPoint > 0 && b.stockQty <= b.reorderPoint)
+  /*
+   * 低庫存＝需要補貨的。超賣造成的負庫存一定要算進來，
+   * 即使那顆珠沒設安全庫存（reorderPoint 為 0）——欠料就是欠料。
+   */
+  const lowStock = active.filter(
+    (b) => b.stockQty < 0 || (b.reorderPoint > 0 && b.stockQty <= b.reorderPoint),
+  )
   const hasReorderPoint = active.some((b) => b.reorderPoint > 0)
 
   const list =

@@ -88,8 +88,9 @@ export default async function ProductsPage() {
                   <Td align="right" numeric alert={!noRecipe && m.marginRate < 0.3}>
                     {noRecipe ? '—' : `${Math.round(m.marginRate * 100)}%`}
                   </Td>
-                  <Td align="right" numeric alert={p.availableQty === 0}>
-                    {p.availableQty}
+                  {/* 超賣後可能為負；顯示 0 並照樣標紅 */}
+                  <Td align="right" numeric alert={p.availableQty <= 0}>
+                    {Math.max(0, p.availableQty)}
                   </Td>
                   <Td>
                     {missing.length > 0 ? (

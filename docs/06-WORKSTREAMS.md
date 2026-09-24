@@ -125,6 +125,10 @@ src/lib/r2.ts                （S5 擁有）
 **產出**：淘寶 xlsx 匯入（含逐列確認流程）、**FreeStore 訂單匯入**、
 採購需求表（依店鋪分組）、毛利表、庫存表、R2 圖片上傳。
 
+**2026-09-24**：`src/app/admin/reports/purchasing/purchasing.ts` 新增——
+凍結層 `getPurchasingReport()` 會把已扣料的訂單重複算進需求（數字多一倍），
+凍結檔不能改，故在頁面層重算。詳見 BOARD「已知問題」。
+
 ---
 
 ## 排程（範圍變更後）
