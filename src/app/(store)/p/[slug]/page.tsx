@@ -7,6 +7,7 @@ import { getProductDetail } from '@/data/products'
 import { formatTWD } from '@/lib/money'
 import { getPublicImageBase, imageUrl } from '../../store.ts'
 import Gallery from '../../_components/Gallery.tsx'
+import AddToCart from '../../_components/AddToCart.tsx'
 
 export const dynamic = 'force-dynamic'
 
@@ -82,7 +83,8 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
             </p>
           )}
 
-
+          {/* 原本「線上購買功能準備中」那一句的位置（docs/10-前台與上架計畫.md 階段 C） */}
+          <AddToCart productId={product.id} />
         </div>
       </div>
     </article>

@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { getStoreSettings } from './store.ts'
+import { readCart, cartCount } from './cart.ts'
 
 export const dynamic = 'force-dynamic'
 
@@ -13,8 +14,9 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default async function StoreLayout({ children }: { children: React.ReactNode }) {
-  const s = await getStoreSettings()
+  const [s, cart] = await Promise.all([getStoreSettings(), readCart()])
   const storeName = s.store_name || '平凡生活'
+  const count = cartCount(cart)
   const bankFilled = Boolean(s.bank_name && s.bank_account)
   const contactFilled = Boolean(s.contact_email || s.contact_line || s.contact_instagram)
 
@@ -26,7 +28,18 @@ export default async function StoreLayout({ children }: { children: React.ReactN
         </div>
       )}
 
-      <header className="border-b border-hairline">
+      <header className="relative border-b border-hairline">
+        {/*
+          購物車連結。件數 0 時只顯示「購物車」三個字，不掛一個 (0)——
+          沒東西的括號零是雜訊。
+        */}
+        <Link
+          href="/cart"
+          className="absolute right-5 top-4 text-[12px] tracking-[0.16em] text-ink-soft hover:text-ink"
+        >
+          購物車{count > 0 && <span className="tnum">（{count}）</span>}
+        </Link>
+
         <div className="mx-auto flex max-w-[1080px] flex-col items-center gap-1.5 px-5 py-10 sm:py-14">
           <Link href="/" className="font-serif text-[22px] tracking-[0.3em] text-ink sm:text-[26px]">
             {storeName}
