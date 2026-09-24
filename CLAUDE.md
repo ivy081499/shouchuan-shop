@@ -109,6 +109,7 @@ git status --short
 | FreeStore（過渡期） | `docs/08-FREESTORE.md` |
 | **進貨、匯入、關稅** | **`docs/09-進貨SOP.md` ← 動手前必讀** |
 | **自建前台、上架補完** | **`docs/10-前台與上架計畫.md` ← 動前台前必讀** |
+| 定價、行銷、擺攤、備貨 | `docs/10-MARKET.md` |
 | 「這件事為什麼這樣決定？」 | `docs/decisions/` — **不要重新討論已定案的事** |
 
 ---
