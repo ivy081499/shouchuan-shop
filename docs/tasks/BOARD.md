@@ -172,7 +172,12 @@
   會員登入一律走 Google，不自建密碼。需要驗證 Google 回傳的 id_token 簽章。
   手刻容易出錯，建議用現成套件。階段 D 才需要，C 之前不必裝。
 
-- [ ] **圖片壓縮（sharp 或同類）** — 自建前台階段 B-4，**尚未核准**
+- [x] **圖片壓縮** — 自建前台階段 B-4 ✅ **2026-09-24 完成，最後沒有裝套件**
+  採用下表「瀏覽器端 Canvas 壓縮」那條：`src/app/admin/products/[id]/compressImage.ts`。
+  實測 3000×2000 / 4.33MB → 1600×1067 / 70KB webp。commit 9c4f430。
+  sharp 這條已排除：Workers 不支援原生二進位模組。
+
+  <details><summary>當時的評估（留存）</summary>
   `docs/10-前台與上架計畫.md` 的 B-4 要求「上傳時壓為 webp、長邊上限 1600px」，
   現行上傳（`src/app/admin/products/actions.ts`）原樣寫檔，沒有壓縮。
   單張上限 5MB，店主若放手機原圖，列表頁一次載十幾張會吃掉 Workers 免費額度。
@@ -187,6 +192,7 @@
   | Cloudflare Images | 否（付費服務） | 超出零成本原則 |
 
   **壓縮屬於上傳端（後台），不是前台顯示**，所以不擋階段 C。
+  </details>
 
 
 ---

@@ -181,6 +181,44 @@ D1 沒有跨陳述句交易，這是能做到的最好保證。
 
 ---
 
+## 2026-09-24 — 階段 B 收尾 + 後台 Access 補洞 — worktree-admin-access-guard
+
+**做了什麼**
+
+1. **稽核階段 B**（worktree-storefront-plan 的三個 commit）。實作品質沒問題：
+   typecheck／build 都過、草稿與下架商品確實擋在 404、未碰凍結檔。
+   但翻出一個 **Phase 0 就有的舊帳**：`src/app/admin/layout.tsx` 註解寫著
+   「這裡再驗一次 Access 身分標頭」，**實際上整個專案都沒有這段程式碼**。
+   前台一上線網域就公開，`/admin` 等於只剩 Cloudflare Access 單層防守。
+
+2. **補上 Access 第二層**（commit cf8d590）。新增 `src/app/admin/_shell/access.ts`，
+   讀 `Cf-Access-Authenticated-User-Email` 與 `OWNER_EMAIL` 比對（兩邊轉小寫 trim），
+   不符只渲染自包含的 403 畫面，不洩漏允許的 email。
+   **本機開發一律放行**——`npm run dev` 沒有這個標頭，擋下去會把店主鎖在自己後台外面。
+
+3. **階段 B 收尾**（commit 9c4f430），依店主 2026-09-24 指示：
+   - **配方透視整塊移除**，`RecipeXray.tsx` 已刪。
+   - **前台不顯示任何庫存資訊**：「還有 N 條」、「已售完」、列表頁售完標籤與
+     圖片淡化全部拿掉（淡化也在透露庫存）。
+   - **B-4 圖片壓縮補上，但沒裝套件**（見下）。
+
+**下一個人要知道**
+
+1. **圖片壓縮在瀏覽器端，不在伺服器。** `compressImage.ts` 用 Canvas 壓成 webp。
+   **不要改成 sharp**——上傳是 Server Action，正式跑在 Cloudflare Workers，
+   不支援原生二進位模組；wasm 版會吃掉每請求 10ms 的 CPU 上限。
+   實測 3000×2000 / 4.33MB → 1600×1067 / 70KB。
+2. **`getAvailableQty()` 沒有刪，只是前台不顯示。** 階段 C 結帳要靠它擋超賣。
+3. **兩個 worktree 已合併**到 `worktree-admin-access-guard` 這條分支
+   （前台階段 B + 後台 Access 修補），**尚未併回 main**。
+4. **一個沒查完的問題**：後台改商品狀態若儲存失敗，`error` 沒被設值，
+   畫面完全沒回饋（只有按鈕變灰）。已先把錯誤訊息改到底部儲存列旁邊，
+   但治不了「error 根本沒設值」。原生 `<select>` 在瀏覽器自動化下展不開，
+   重現不出店主的手動操作路徑，**需要店主手動點一次回報畫面顯示什麼**。
+5. 測試用的是 worktree 內的資料庫副本，店主正本全程只讀未寫。
+
+---
+
 ## 2026-09-22 — 棄用確認框 + 訂單當時用料查詢 — worktree-bead-retire
 
 **做了什麼**
