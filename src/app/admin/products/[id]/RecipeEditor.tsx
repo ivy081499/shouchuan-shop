@@ -338,18 +338,26 @@ export default function RecipeEditor({
     setMsg(null)
     setUploading(true)
     startTransition(async () => {
-      // 先在瀏覽器壓成 webp 再送出：Workers 壓不了圖，理由見 compressImage.ts
-      const fd = new FormData()
-      for (const f of Array.from(files)) fd.append('files', await compressImage(f))
+      /*
+        整段包 try/catch：壓縮或上傳任何一步拋錯，都要把「上傳中…」解除。
+        沒有這層的話按鈕會永遠卡著，店主只能重整頁面——而且不知道發生什麼事。
+      */
+      try {
+        // 先在瀏覽器壓成 webp 再送出：Workers 壓不了圖，理由見 compressImage.ts
+        const fd = new FormData()
+        for (const f of Array.from(files)) fd.append('files', await compressImage(f))
 
-      const r = await uploadProductImages(productId, fd)
-      if (!r.ok) {
-        setError(r.error)
-      } else {
-        // 重新載入才拿得到新照片的 id 與網址
-        setMsg(`已上傳 ${r.count} 張照片`)
-        window.location.reload()
-        return
+        const r = await uploadProductImages(productId, fd)
+        if (!r.ok) {
+          setError(r.error)
+        } else {
+          // 重新載入才拿得到新照片的 id 與網址
+          setMsg(`已上傳 ${r.count} 張照片`)
+          window.location.reload()
+          return
+        }
+      } catch {
+        setError('照片上傳失敗，請再試一次。若是 iPhone 拍的 HEIC 檔，請先轉存成 JPG。')
       }
       setUploading(false)
       if (fileInput.current) fileInput.current.value = ''
@@ -674,8 +682,9 @@ export default function RecipeEditor({
               <div className="text-[12px] text-ink-soft">商品照片</div>
               <div className="mt-0.5 text-[12px] text-ink-soft">
                 可一次選多張，<strong className="text-ink">檔名不用先改</strong>——存進電腦時會自動
-                重新命名成 <span className="tnum">{productId}-1.jpg</span>、
-                <span className="tnum">{productId}-2.jpg</span> 依序排下去。
+                重新命名成 <span className="tnum">{productId}-1.webp</span>、
+                <span className="tnum">{productId}-2.webp</span> 依序排下去
+                （上傳時會自動壓縮成 webp，省空間也載得快）。
               </div>
             </div>
             <label className="cursor-pointer border border-hairline px-4 py-2 text-[13px] hover:border-accent">

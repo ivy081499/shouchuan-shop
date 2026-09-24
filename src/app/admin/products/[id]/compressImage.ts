@@ -14,8 +14,23 @@ const MAX_EDGE = 1600
 /** webp 品質，0.82 對照片來說肉眼幾乎看不出差別，檔案卻小很多 */
 const QUALITY = 0.82
 
-/** 讀成 Image 物件，拿得到原始尺寸才能算縮放比例 */
-function loadImage(file: File): Promise<HTMLImageElement> {
+/**
+ * 讀成可繪製的點陣圖，拿得到原始尺寸才能算縮放比例。
+ *
+ * 優先用 createImageBitmap 並指定 imageOrientation: 'from-image'——
+ * 手機直拍的照片 EXIF 帶方向資訊（Orientation 6/8），
+ * 用 `new Image()` + drawImage 不會套用，壓完照片會躺著。
+ * 舊瀏覽器沒有這個 API 或不支援該選項時，退回 Image 的老路子。
+ */
+async function loadImage(file: File): Promise<ImageBitmap | HTMLImageElement> {
+  if (typeof createImageBitmap === 'function') {
+    try {
+      return await createImageBitmap(file, { imageOrientation: 'from-image' })
+    } catch {
+      // 落到下面的退路
+    }
+  }
+
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file)
     const img = new Image()
@@ -51,6 +66,8 @@ export async function compressImage(file: File): Promise<File> {
     const ctx = canvas.getContext('2d')
     if (!ctx) return file
     ctx.drawImage(img, 0, 0, w, h)
+    // ImageBitmap 佔的記憶體不等 GC，用完就放掉——一次選十幾張才不會疊爆
+    if ('close' in img) img.close()
 
     const blob = await new Promise<Blob | null>((resolve) =>
       canvas.toBlob(resolve, 'image/webp', QUALITY),
