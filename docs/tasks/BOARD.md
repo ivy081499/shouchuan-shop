@@ -179,6 +179,40 @@
 
 ## ⚠️ 已知問題（不是這次改的，但要記著）
 
+> 以下三項是 2026-09-24 稽核（獨立 agent，55 項測試 52 通過）找到的，**都還沒修**。
+
+- [ ] **【HIGH】訂單列表的缺料檢查會隨訂單量變慢** — `src/app/admin/orders/page.tsx` 的 `findOversold()`
+  對每張「還沒扣料」的訂單各跑 2–3 次查詢，而且**沒有排除已取消的訂單**。
+  D1 每次查詢都是一次網路往返。稽核實測：120 張訂單（其中 60 張已取消）
+  → **240 次查詢**，訂單累積起來這頁會逾時。
+
+  兩個修法（擇一或都做）：
+  1. 排除 `cancelled` 與 `completed` 的訂單（已取消的根本不需要備料）
+  2. 改成一次撈完所有訂單明細與珠子庫存，在記憶體裡比對，而不是逐張查
+
+  **開賣前應該處理**，不然訂單一多就痛。
+
+- [ ] **【MEDIUM】收款備援路徑靠錯誤訊息字串對接，耦合脆弱**
+  `src/app/admin/orders/actions.ts` 的 `confirmPaymentAction()` 用
+  `result.error.startsWith('庫存不足')` 判斷要不要走 `deductAllowingNegative()`。
+  **凍結層 `src/data/orders.ts` 的訊息文案一改，這裡就靜默失效**（收款又會被擋）。
+
+  另外 `deductAllowingNegative()` **自己沒有 `canTransition()` 守衛**，
+  與凍結層行為不一致。稽核實測：直接對 `shipped` 訂單呼叫它會回 `ok=true`
+  並把狀態打回 `paid`。**目前走不到**（一定先經過 `confirmPaymentAction`，
+  那裡會被凍結層擋下），但這是個等著爆的地雷。
+
+  建議修法：在 `deductAllowingNegative()` 開頭自己加一次
+  `canTransition(order.status, 'paid')` 檢查，不要只依賴上游。
+
+- [ ] **【LOW】設定頁金額的整數上限檢查算錯單位**
+  `src/app/admin/settings/actions.ts` 用 `Number.isSafeInteger()` 驗的是「元」，
+  但存進資料庫的是「分」（乘 100）。輸入 900719925474099 會通過驗證，
+  產出超過 `MAX_SAFE_INTEGER` 的值。**實務上運費填不到這個數字**，純邊界瑕疵。
+  修法：驗 `yuan * 100` 而不是 `yuan`。
+
+
+
 - [x] **採購需求把已扣料的訂單重複計算** — ✅ 2026-09-24 發現並修正
   `src/data/reports.ts` 的 `getPurchasingReport()` 把「所有未出貨訂單」都算成需求，
   包括**已經確認收款、料早就從庫存扣掉**的那些。同一批料被算兩次：
