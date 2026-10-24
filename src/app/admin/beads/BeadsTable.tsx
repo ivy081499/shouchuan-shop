@@ -84,6 +84,8 @@ export default function BeadsTable({
   const [fCost, setFCost] = useState<Range>(EMPTY_RANGE)
   const [fStock, setFStock] = useState<Range>(EMPTY_RANGE)
   const [fReorder, setFReorder] = useState<Range>(EMPTY_RANGE)
+  /** 圖片有無：補圖時用「沒有圖」快速找出還沒上傳的 */
+  const [fImage, setFImage] = useState<'all' | 'with' | 'without'>('all')
 
   const [sortKey, setSortKey] = useState<SortKey>('name')
   const [sortAsc, setSortAsc] = useState(true)
@@ -172,6 +174,8 @@ export default function BeadsTable({
   }
 
   const retiredCount = beads.filter((b) => b.isArchived).length
+  /** 還沒上圖的數量：只算還在用的，棄用料不需要補圖 */
+  const noImageCount = beads.filter((b) => !b.isArchived && !b.imageUrl).length
 
   const rows = useMemo(() => {
     const nameQ = fName.trim().toLowerCase()
@@ -192,6 +196,8 @@ export default function BeadsTable({
       if (!inRange(b.unitCostCents, fCost, 100)) return false
       if (!inRange(b.stockQty, fStock)) return false
       if (!inRange(b.reorderPoint, fReorder)) return false
+      if (fImage === 'with' && !b.imageUrl) return false
+      if (fImage === 'without' && b.imageUrl) return false
       return true
     })
 
@@ -208,12 +214,26 @@ export default function BeadsTable({
       if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * dir
       return String(va).localeCompare(String(vb), 'zh-Hant') * dir
     })
-  }, [beads, retireView, fName, fCats, fSups, fSize, fCost, fStock, fReorder, sortKey, sortAsc])
+  }, [
+    beads,
+    retireView,
+    fName,
+    fCats,
+    fSups,
+    fSize,
+    fCost,
+    fStock,
+    fReorder,
+    fImage,
+    sortKey,
+    sortAsc,
+  ])
 
   const activeCount =
     (fName.trim() ? 1 : 0) +
     (fCats.size ? 1 : 0) +
     (fSups.size ? 1 : 0) +
+    (fImage !== 'all' ? 1 : 0) +
     [fSize, fCost, fStock, fReorder].filter((r) => r.min.trim() || r.max.trim()).length
 
   const totalPages = Math.max(1, Math.ceil(rows.length / perPage))
@@ -251,6 +271,7 @@ export default function BeadsTable({
     setFCost(EMPTY_RANGE)
     setFStock(EMPTY_RANGE)
     setFReorder(EMPTY_RANGE)
+    setFImage('all')
   }
 
   function sortBy(key: SortKey) {
@@ -408,6 +429,30 @@ export default function BeadsTable({
               className="mt-1 w-full border-b border-hairline bg-transparent py-1 text-[13px] focus:border-accent focus:outline-none"
             />
           </label>
+
+          <div className="text-[12px]">
+            <span className="block text-ink-soft">圖片</span>
+            <div className="mt-1.5 inline-flex border border-hairline">
+              {(
+                [
+                  ['all', '不限'],
+                  ['without', `沒有圖${noImageCount > 0 ? ` ${noImageCount}` : ''}`],
+                  ['with', '已有圖'],
+                ] as const
+              ).map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setFImage(key)}
+                  className={`px-2.5 py-1 text-[12px] ${
+                    fImage === key ? 'bg-ink text-paper' : 'text-ink-soft hover:text-ink'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
 
           <div className="text-[12px] lg:col-span-2">
             <span className="block text-ink-soft">分類（可複選）</span>
