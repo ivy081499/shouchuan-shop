@@ -28,13 +28,20 @@ ls -la .data/local.sqlite              # 必須存在，且是你自己複製的
 
 ## 開工步驟（照順序，不要跳）
 
-### 1. 備份正式資料庫
+### 1. 備份正式資料庫（合併前）
 
 ```bash
-cp ~/Desktop/手串/.data/local.sqlite ~/Desktop/手串/backups/before-$(date +%Y%m%d-%H%M).sqlite
+cp ~/Desktop/手串/.data/local.sqlite \
+   ~/Desktop/手串/backups/before-<批次名>-$(date +%Y%m%d-%H%M).sqlite
 ```
 
 **這步不能省。** 出事了這是唯一的退路。
+
+> 🔴 **【硬規則】每批進貨要留兩份備份：合併前一份、合併後一份。**
+> 店主 2026-10-24 明確要求「以後每次進貨我都要有 DB 備份」。
+> 合併前那份是出事時的退路；合併後那份是「這批確認無誤的狀態」，
+> 下一批出問題時可以退回這裡，不必從上上批重跑。
+> 合併後的備份見「合併」章節第 3 步，**兩份都做完這批才算結束**。
 
 ### 2. 開隔離工作區
 
@@ -135,11 +142,15 @@ sqlite3 ~/Desktop/手串/.data/local.sqlite "SELECT COUNT(*) FROM shipments;"   
 
 ## 合併（店主說可以才做）
 
+### 1. 合併程式碼
+
 ```bash
 cd ~/Desktop/手串
 git merge <批次名>
 npx drizzle-kit generate          # 若改過 schema
 ```
+
+### 2. 正式資料庫套用這批進貨
 
 **正式資料庫要另外處理** —— git 不管資料庫檔案：
 
@@ -154,6 +165,33 @@ node --experimental-strip-types scripts/backfill-duty.ts .data/local.sqlite <關
 
 **不要把作業資料庫直接覆蓋過去** —— 那份可能含有測試殘留。
 一律「在正式庫重跑一次」，讓結果可重現。
+
+> **例外：這批沒有關稅時**（店主回報關稅 0），
+> `backfill-duty.ts` 無事可做，跳過即可，不要硬跑一個 0 進去。
+> 匯入本身已由 `/admin/inventory` 的確認流程寫入，顆數與成本都已確認過。
+
+### 3. 🔴 備份合併後的正式資料庫（不可省略）
+
+```bash
+cp ~/Desktop/手串/.data/local.sqlite \
+   ~/Desktop/手串/backups/after-<批次名>-$(date +%Y%m%d-%H%M).sqlite
+```
+
+**這份是「這批確認無誤」的存檔點。** 下一批進貨出問題時退回這裡，
+不必從更早的備份重跑一次全部批次。
+
+驗收：`ls ~/Desktop/手串/backups/` 應該看得到這批的 `before-` 與 `after-` 各一份。
+
+### 備份命名與保留
+
+| 檔名 | 時機 | 內容 |
+|---|---|---|
+| `before-<批次名>-<時間>.sqlite` | 開工第 1 步 | 這批匯入前的狀態 |
+| `after-<批次名>-<時間>.sqlite` | 合併第 3 步 | 這批確認無誤的狀態 |
+
+- **不要刪舊備份。** SQLite 檔約 200KB，留著幾十批也只有幾 MB。
+- `backups/` 已在 `.gitignore` 內，不進 git（資料庫不該進版控）。
+  這代表**備份只存在本機**，換機或重灌前要自己複製走。
 
 ---
 
