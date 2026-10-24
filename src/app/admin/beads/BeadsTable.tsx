@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Money } from '@/ui'
 import {
   useColumnWidths,
@@ -114,6 +114,27 @@ export default function BeadsTable({
   }, [size])
 
   const show = (k: string) => !hidden.has(k)
+
+  /*
+   * 表格撐滿容器用的量測。
+   * 欄寬總和小於容器時，差額 slack 補給最後一欄，避免右側留白；
+   * 總和較寬時 slack 為 0，維持原寬並由外層橫向捲動。
+   */
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const [containerWidth, setContainerWidth] = useState(0)
+
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(([entry]) => {
+      setContainerWidth(Math.floor(entry.contentRect.width))
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+
+  const colTotal = visible.reduce((sum, c) => sum + (widths[c.key] ?? c.width), 0)
+  const slack = Math.max(0, containerWidth - colTotal)
 
   /**
    * 會被截斷的文字格。
@@ -518,22 +539,35 @@ export default function BeadsTable({
           </button>
         </div>
       ) : (
-        <div className="max-h-[70vh] overflow-auto">
+        <div ref={scrollRef} className="max-h-[70vh] overflow-auto">
           {/*
             table-fixed 才吃得到 colgroup 的寬度；
             且必須明確給總寬，否則瀏覽器會把欄位壓縮到容器內，拖曳就看不出效果。
+
+            寬度取「欄寬總和」與「容器寬度」的大者：
+            欄寬總和較窄時撐滿容器（否則右側留一大片空白），
+            較寬時維持總和、由外層 overflow-auto 橫向捲動。
           */}
           <table
             className="border-collapse text-[13px]"
             style={{
               tableLayout: 'fixed',
-              width: visible.reduce((sum, c) => sum + (widths[c.key] ?? c.width), 0),
+              width: Math.max(colTotal, containerWidth || 0),
             }}
           >
+            {/*
+              撐滿容器時多出來的寬度全部給最後一欄，其餘維持拖曳設定的寬度。
+              若最後一欄也寫死寬度，table-fixed 會把多餘空間均分給每一欄，
+              拖曳調好的欄寬就會跑掉。
+            */}
             <colgroup>
-              {visible.map((c) => (
-                <col key={c.key} style={{ width: widths[c.key] }} />
-              ))}
+              {visible.map((c, i) => {
+                const isLast = i === visible.length - 1
+                const w = widths[c.key] ?? c.width
+                return (
+                  <col key={c.key} style={{ width: isLast ? w + slack : w }} />
+                )
+              })}
             </colgroup>
             <thead>
               <tr>
