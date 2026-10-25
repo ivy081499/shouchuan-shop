@@ -1,7 +1,7 @@
 'use server'
 
 import { getDb } from '@/data/db'
-import { createProduct, updateProduct, saveRecipe, addProductImage, deleteProductImage, getProductById } from '@/data/products'
+import { createProduct, updateProduct, saveRecipe, addProductImage, deleteProductImage, getProductById, countOrderItems, deleteProduct } from '@/data/products'
 import { productInputSchema, recipeLineSchema, productStatusSchema } from '@/contracts/product'
 import { zodMessage, slugSchema } from '@/contracts/common'
 import { productImages, recipes } from '@db/schema'
@@ -331,4 +331,45 @@ export async function deleteProductImageAction(productId: number, imageId: numbe
   revalidatePath(`/admin/products/${productId}`)
   revalidatePath('/admin')
   return { ok: true as const, demoted }
+}
+
+/**
+ * 刪除手串。三層防呆：
+ *
+ * 1. **已上架** → 不給刪，請先下架。避免前台連結突然變成 404，
+ *    也讓店主有一步停頓確認自己刪的是哪一條。
+ * 2. **有訂單** → 不給刪，建議改「已下架」。
+ *    order_items 的外鍵是 set null，刪了會讓歷史訂單對不回商品。
+ * 3. 其餘才真的刪；配方與照片紀錄由外鍵 cascade 一併移除。
+ *
+ * 回傳 requireConfirm 讓前端做二次確認，不在這裡直接刪。
+ */
+export async function deleteProductAction(productId: number) {
+  const db = await getDb()
+
+  const product = await getProductById(db, productId)
+  if (!product) return { ok: false as const, error: '找不到這條手串，可能已經被刪掉了。' }
+
+  if (product.status === 'active') {
+    return {
+      ok: false as const,
+      error: `「${product.name}」目前是已上架，不能直接刪除。請先改成「已下架」或「草稿」，再回來刪。`,
+    }
+  }
+
+  const orderCount = await countOrderItems(db, productId)
+  if (orderCount > 0) {
+    return {
+      ok: false as const,
+      error:
+        `「${product.name}」已經有 ${orderCount} 筆訂單賣出，不能刪除——` +
+        '刪了歷史訂單就查不到這是哪個商品。請改成「已下架」，它就不會出現在前台。',
+    }
+  }
+
+  await deleteProduct(db, productId)
+
+  revalidatePath('/admin/products')
+  revalidatePath('/admin')
+  return { ok: true as const, name: product.name }
 }

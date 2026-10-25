@@ -30,7 +30,8 @@ export default function NewProductForm() {
       const res = await createProductAction({
         slug: toSlug(name),
         name: name.trim(),
-        priceCents: yuanToCents(price),
+        // 留空＝還沒定價，存 0；上架前會擋下未定價的商品
+        priceCents: price.trim() ? yuanToCents(price) : 0,
         wristSizeCm: wrist ? Number.parseFloat(wrist) : null,
         status: 'draft',
         sortOrder: 0,
@@ -59,14 +60,13 @@ export default function NewProductForm() {
           />
         </label>
         <label className="text-[13px]">
-          <span className="block text-ink-soft">售價</span>
+          <span className="block text-ink-soft">售價（可留空）</span>
           <input
-            required
             type="number"
-            min="1"
+            min="0"
             value={price}
             onChange={(e) => setPrice(e.target.value)}
-            placeholder="980"
+            placeholder="選完材料再填"
             className="mt-1.5 w-24 border-b border-hairline bg-transparent py-1.5 tnum focus:border-accent focus:outline-none"
           />
         </label>

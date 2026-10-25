@@ -28,7 +28,12 @@ export interface BeadOption {
 
 interface Line {
   beadId: number
-  qty: number
+  /**
+   * 顆數。null＝還沒填（輸入框空白）。
+   * 勾選珠子時不預設 1——店主反映「每次都要先刪掉那個 1 很煩」。
+   * 儲存前由 invalidLines 擋下沒填或填 0 的列。
+   */
+  qty: number | null
 }
 
 export interface ProductPhoto {
@@ -48,14 +53,38 @@ const EMPTY_RANGE: Range = { min: '', max: '' }
 const UNCATEGORIZED = '未分類'
 const NO_SUPPLIER = '未指定'
 
-type SortKey = 'name' | 'sizeMm' | 'unitCostCents' | 'stockQty'
+type SortKey =
+  | 'name'
+  | 'sourceTitle'
+  | 'sourceSpec'
+  | 'category'
+  | 'supplierName'
+  | 'sizeMm'
+  | 'unitCostCents'
+  | 'stockQty'
 
 const SORT_LABEL: Record<SortKey, string> = {
-  name: '名稱',
+  name: '簡稱',
+  sourceTitle: '商品名稱（原始）',
+  sourceSpec: '型號款式（原始）',
+  category: '分類',
+  supplierName: '供應商',
   sizeMm: '尺寸',
   unitCostCents: '單顆成本',
   stockQty: '庫存',
 }
+
+/** 材料列表的欄位定義——與庫存清單同一套概念，但只取挑料時用得到的 */
+const PICKER_COLUMNS: { key: SortKey; label: string; width: string; align?: 'right' }[] = [
+  { key: 'sourceTitle', label: '商品名稱（原始）', width: 'w-[220px]' },
+  { key: 'sourceSpec', label: '型號款式（原始）', width: 'w-[170px]' },
+  { key: 'name', label: '簡稱', width: 'w-[150px]' },
+  { key: 'category', label: '分類', width: 'w-[70px]' },
+  { key: 'sizeMm', label: '尺寸', width: 'w-[60px]', align: 'right' },
+  { key: 'unitCostCents', label: '單顆成本', width: 'w-[80px]', align: 'right' },
+  { key: 'stockQty', label: '庫存', width: 'w-[60px]', align: 'right' },
+  { key: 'supplierName', label: '供應商', width: 'w-[120px]' },
+]
 
 const IMG_SIZE_KEY = 'recipe.imageSize'
 
@@ -201,7 +230,8 @@ export default function RecipeEditor({
   const recipeForCost = lines
     .map((l) => {
       const b = byId.get(l.beadId)
-      return b ? { beadId: l.beadId, qty: l.qty, unitCostCents: b.unitCostCents } : null
+      // 還沒填顆數的列以 0 計入成本試算，避免 NaN
+      return b ? { beadId: l.beadId, qty: l.qty ?? 0, unitCostCents: b.unitCostCents } : null
     })
     .filter((x): x is { beadId: number; qty: number; unitCostCents: number } => x !== null)
 
@@ -211,23 +241,39 @@ export default function RecipeEditor({
     lines
       .map((l) => {
         const b = byId.get(l.beadId)
-        return b ? { qty: l.qty, stockQty: b.stockQty } : null
+        return b ? { qty: l.qty ?? 0, stockQty: b.stockQty } : null
       })
       .filter((x): x is { qty: number; stockQty: number } => x !== null),
   )
 
-  const totalBeadCount = lines.reduce((sum, l) => sum + l.qty, 0)
+  const totalBeadCount = lines.reduce((sum, l) => sum + (l.qty ?? 0), 0)
+
+  /**
+   * 滑過材料列時預覽的珠子。
+   * 面板固定在列表左上角，不跟著滑鼠跑——滑鼠位置的 tooltip 會蓋住
+   * 正要看的那幾列，挑料時反而礙事。
+   */
+  const [preview, setPreview] = useState<BeadOption | null>(null)
+
+  /** 按下儲存後先展開確認列，避免改一半誤觸就寫進資料庫 */
+  const [confirmingSave, setConfirmingSave] = useState(false)
+
+  /** 勾了但沒填顆數（或填 0）的列——儲存時要擋下並指名是哪幾顆 */
+  const invalidLines = lines.filter((l) => l.qty === null || l.qty < 1)
 
   function toggle(beadId: number) {
     setLines((ls) =>
       ls.some((l) => l.beadId === beadId)
         ? ls.filter((l) => l.beadId !== beadId)
-        : [...ls, { beadId, qty: 1 }],
+        : [...ls, { beadId, qty: null }],
     )
   }
 
-  function setQty(beadId: number, qty: number) {
-    setLines((ls) => ls.map((l) => (l.beadId === beadId ? { ...l, qty: Math.max(1, qty) } : l)))
+  /** qty 為 null 代表清空輸入框；負數夾到 0 讓儲存時的檢查接手 */
+  function setQty(beadId: number, qty: number | null) {
+    setLines((ls) =>
+      ls.map((l) => (l.beadId === beadId ? { ...l, qty: qty === null ? null : Math.max(0, qty) } : l)),
+    )
   }
 
   /** 還原到上次儲存的內容；沒存過就是全空 */
@@ -277,6 +323,19 @@ export default function RecipeEditor({
       setError('網址代稱只能用小寫英文、數字與連字號，例：peach-blossom。')
       return
     }
+    /*
+     * 勾了珠子卻沒填顆數就擋下，並指名是哪幾顆。
+     * 不自動帶 1——猜錯顆數會讓成本與可做數量一起失真，
+     * 寧可要店主補填。
+     */
+    if (invalidLines.length > 0) {
+      const names = invalidLines
+        .map((l) => byId.get(l.beadId)?.name ?? `#${l.beadId}`)
+        .join('、')
+      setError(`這些珠子還沒填顆數：${names}。每顆至少 1。`)
+      setConfirmingSave(false)
+      return
+    }
     startTransition(async () => {
       // 留白代表「沒有值」，存 null 而不是 0——0 在手圍與限量都有別的意思
       const toNullableNumber = (s: string) => {
@@ -303,7 +362,8 @@ export default function RecipeEditor({
           priceCents: yuanToCents(price),
           status: currentStatus,
         },
-        lines.map((l, i) => ({ beadId: l.beadId, qty: l.qty, position: i })),
+        // 上面的 invalidLines 檢查已確保每列都有顆數
+        lines.map((l, i) => ({ beadId: l.beadId, qty: l.qty as number, position: i })),
       )
       if (!r.ok) {
         setError(r.error)
@@ -328,6 +388,7 @@ export default function RecipeEditor({
       setManualStock(manualStock.trim())
       setSortOrder(String(toNullableNumber(sortOrder) ?? 0))
       setMsg('已儲存')
+      setConfirmingSave(false)
     })
   }
 
@@ -651,8 +712,9 @@ export default function RecipeEditor({
               placeholder="peach-blossom"
               className="mt-1 w-full border-b border-hairline bg-transparent py-1 text-[15px] focus:border-accent focus:outline-none"
             />
-            <span className="mt-1 block text-[11px] text-ink-soft">
-              小寫英文、數字、連字號。
+            <span className="mt-1 block text-[11px] leading-relaxed text-ink-soft">
+              客人看到的網址會是 <span className="tnum">/p/{slug.trim() || 'peach-blossom'}</span>
+              。只能用小寫英文、數字與連字號，每條手串不可重複。
               {currentStatus === 'active' && slug !== saved.slug && (
                 <strong className="text-alert">　已上架中改這個，舊網址會失效。</strong>
               )}
@@ -764,6 +826,104 @@ export default function RecipeEditor({
 
       {error && <div className="mb-5 border-l-2 border-alert bg-alert/5 px-4 py-3 text-[13px]">{error}</div>}
       {msg && <div className="mb-5 border-l-2 border-accent bg-sunk px-4 py-3 text-[13px]">{msg}</div>}
+
+      {/* ── 這條手串目前用了哪些材料 ──
+           與下方「選料」刻意分成兩塊：這裡只看已選的結果，
+           不受選料區的篩選影響，顆數也可以直接在這裡改。 */}
+      <section className="mb-8 border-2 border-ink">
+        <div className="flex flex-wrap items-baseline justify-between gap-3 bg-ink px-5 py-2.5">
+          <h2 className="font-serif text-[15px] tracking-wider text-paper">
+            目前的材料
+            <span className="ml-2 text-[12px] tracking-normal text-paper/70">
+              {lines.length} 種 · 共 {totalBeadCount} 顆
+            </span>
+          </h2>
+          <p className="text-[12px] text-paper/70">
+            這條手串實際會用到的料。顆數可直接改，按「移除」取消選用。
+          </p>
+        </div>
+
+        {lines.length === 0 ? (
+          <p className="px-5 py-8 text-center text-[13px] text-ink-soft">
+            還沒選任何材料。在下面的「選料」勾選要用的珠子。
+          </p>
+        ) : (
+          <ul className="divide-y divide-hairline">
+            {lines.map((l) => {
+              const b = byId.get(l.beadId)
+              if (!b) return null
+              const short = l.qty !== null && l.qty > b.stockQty
+              return (
+                <li
+                  key={l.beadId}
+                  onMouseEnter={() => setPreview(b)}
+                  className="flex items-center gap-3 px-5 py-2 text-[13px]"
+                >
+                  {b.imageUrl ? (
+                    /* eslint-disable-next-line @next/next/no-img-element */
+                    <img
+                      src={b.imageUrl}
+                      alt={b.name}
+                      className="h-10 w-10 shrink-0 border border-hairline object-cover"
+                    />
+                  ) : (
+                    <span className="h-10 w-10 shrink-0 border border-hairline bg-sunk" />
+                  )}
+                  <span className="w-[170px] shrink-0 truncate" title={b.name}>
+                    {b.name}
+                  </span>
+                  <span className="w-[200px] shrink-0 truncate text-ink-soft" title={b.sourceTitle ?? ''}>
+                    {b.sourceTitle ?? '—'}
+                  </span>
+                  <span className="w-[70px] shrink-0 truncate text-ink-soft">{b.category ?? '—'}</span>
+                  <span className="tnum w-[60px] shrink-0 text-right text-ink-soft">
+                    {b.sizeMm ? `${b.sizeMm}mm` : '—'}
+                  </span>
+                  <span className="tnum w-[80px] shrink-0 text-right text-ink-soft">
+                    {formatTWD(b.unitCostCents, true)}
+                  </span>
+                  <span className="shrink-0 text-ink-soft">×</span>
+                  <input
+                    type="number"
+                    min={1}
+                    placeholder="顆數"
+                    value={l.qty ?? ''}
+                    onChange={(e) => {
+                      const raw = e.target.value.trim()
+                      setQty(l.beadId, raw === '' ? null : Number.parseInt(raw, 10))
+                    }}
+                    aria-label={`${b.name} 的顆數`}
+                    aria-invalid={l.qty === null || l.qty < 1}
+                    className={`w-16 shrink-0 border-b bg-transparent py-1 text-right tnum focus:outline-none ${
+                      l.qty === null || l.qty < 1
+                        ? 'border-alert focus:border-alert'
+                        : 'border-hairline focus:border-accent'
+                    }`}
+                  />
+                  <span className="tnum w-[90px] shrink-0 text-right">
+                    {l.qty ? formatTWD(b.unitCostCents * l.qty, true) : '—'}
+                  </span>
+                  <span
+                    className={`tnum w-[90px] shrink-0 text-right text-[12px] ${
+                      short ? 'text-alert' : 'text-ink-soft'
+                    }`}
+                    title={short ? '這條配方要用的顆數超過目前庫存' : undefined}
+                  >
+                    庫存 {b.stockQty}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => toggle(l.beadId)}
+                    className="ml-auto shrink-0 text-[12px] text-ink-soft underline underline-offset-2 hover:text-alert"
+                  >
+                    移除
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
+        )}
+      </section>
 
       {/* ── 選料 ── */}
       <section className="mb-24">
@@ -941,6 +1101,50 @@ export default function RecipeEditor({
           </div>
         </div>
 
+        {/*
+          滑過材料列時的預覽，固定在列表最上方。
+          刻意不跟著滑鼠——跟著跑的 tooltip 會蓋住正要比較的那幾列。
+          高度固定，有沒有預覽都佔同樣空間，列表不會跳動。
+        */}
+        <div
+          onMouseLeave={() => setPreview(null)}
+          className="mb-3 flex h-[132px] items-center gap-4 border border-hairline bg-sunk/40 px-4"
+        >
+          {preview ? (
+            <>
+              {preview.imageUrl ? (
+                /* eslint-disable-next-line @next/next/no-img-element */
+                <img
+                  src={preview.imageUrl}
+                  alt={preview.name}
+                  className="h-[108px] w-[108px] shrink-0 border border-hairline bg-paper object-contain"
+                />
+              ) : (
+                <span className="flex h-[108px] w-[108px] shrink-0 items-center justify-center border border-dashed border-hairline text-[12px] text-ink-soft">
+                  沒有圖片
+                </span>
+              )}
+              <div className="min-w-0 text-[13px] leading-relaxed">
+                <p className="font-serif text-[16px] tracking-wider text-ink">{preview.name}</p>
+                <p className="mt-0.5 truncate text-ink-soft" title={preview.sourceTitle ?? ''}>
+                  {preview.sourceTitle ?? '—'}
+                </p>
+                <p className="truncate text-ink-soft" title={preview.sourceSpec ?? ''}>
+                  {preview.sourceSpec ?? '—'}
+                </p>
+                <p className="mt-0.5 text-ink-soft">
+                  {preview.category ?? '未分類'}
+                  {preview.sizeMm ? ` · ${preview.sizeMm}mm` : ''}
+                  {` · ${formatTWD(preview.unitCostCents, true)}／顆`}
+                  {` · 庫存 ${preview.stockQty}`}
+                </p>
+              </div>
+            </>
+          ) : (
+            <span className="text-[12px] text-ink-soft">滑過下面任一列，這裡會顯示那顆珠的大圖與完整名稱。</span>
+          )}
+        </div>
+
         {beads.length === 0 ? (
           <div className="border border-dashed border-hairline px-8 py-12 text-center text-[13px] text-ink-soft">
             還沒有珠子可選。先到「庫存」匯入淘寶訂單。
@@ -965,6 +1169,32 @@ export default function RecipeEditor({
                       {group.length}
                     </span>
                   </h3>
+                  {/* 欄位標題：點一下換排序欄，再點一下反向，與庫存清單同一套操作 */}
+                  <div className="flex items-center gap-3 border-b border-hairline px-1 py-1.5 text-[11px] text-ink-soft">
+                    <span style={{ width: thumbPx }} className="shrink-0" />
+                    <span className="w-5 shrink-0" />
+                    {PICKER_COLUMNS.map((c) => (
+                      <button
+                        key={c.key}
+                        type="button"
+                        onClick={() => {
+                          if (sortKey === c.key) setSortAsc((v) => !v)
+                          else {
+                            setSortKey(c.key)
+                            setSortAsc(true)
+                          }
+                        }}
+                        className={`${c.width} shrink-0 truncate ${
+                          c.align === 'right' ? 'text-right' : 'text-left'
+                        } hover:text-ink ${sortKey === c.key ? 'text-ink' : ''}`}
+                      >
+                        {c.label}
+                        {sortKey === c.key && (sortAsc ? ' ↑' : ' ↓')}
+                      </button>
+                    ))}
+                    <span className="w-[72px] shrink-0 text-right">顆數</span>
+                    <span className="w-[84px] shrink-0 text-right">小計</span>
+                  </div>
                   <ul className="divide-y divide-hairline">
                     {group.map((b) => {
                       const line = lines.find((l) => l.beadId === b.id)
@@ -976,7 +1206,9 @@ export default function RecipeEditor({
                       return (
                         <li
                           key={b.id}
-                          className={`flex flex-wrap items-center gap-4 py-2.5 text-[13px] ${
+                          onMouseEnter={() => setPreview(b)}
+                          onFocus={() => setPreview(b)}
+                          className={`flex items-center gap-3 py-2 text-[13px] ${
                             checked ? 'bg-sunk' : ''
                           }`}
                         >
@@ -991,7 +1223,6 @@ export default function RecipeEditor({
                             >
                               {/* 圖片來源含外部網址（淘寶），next/image 需設定網域，故用原生 img */}
                               {/* eslint-disable-next-line @next/next/no-img-element */}
-                              {/* 大圖是要看清楚料，整張顯示不裁切；小圖填滿比較整齊 */}
                               <img
                                 src={b.imageUrl}
                                 alt={b.name}
@@ -1006,51 +1237,85 @@ export default function RecipeEditor({
                               className="shrink-0 border border-hairline bg-sunk"
                             />
                           )}
-                          <label className="flex flex-1 min-w-[200px] cursor-pointer items-center gap-3">
-                            <input type="checkbox" checked={checked} onChange={() => toggle(b.id)} />
-                            <span>{b.name}</span>
-                            {b.sizeMm && <span className="tnum text-ink-soft">{b.sizeMm}mm</span>}
+
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => toggle(b.id)}
+                            aria-label={`選用 ${b.name}`}
+                            className="w-5 shrink-0 cursor-pointer"
+                          />
+
+                          <span className="w-[220px] shrink-0 truncate text-ink-soft" title={b.sourceTitle ?? ''}>
+                            {b.sourceTitle ?? '—'}
+                          </span>
+                          <span className="w-[170px] shrink-0 truncate text-ink-soft" title={b.sourceSpec ?? ''}>
+                            {b.sourceSpec ?? '—'}
+                          </span>
+                          <span className="flex w-[150px] shrink-0 items-center gap-1.5 truncate">
+                            <span className="truncate" title={b.name}>
+                              {b.name}
+                            </span>
                             {b.isArchived && (
                               <span
                                 title="這顆料已棄用，只因為還在這條配方裡才顯示。建議找時間換掉。"
-                                className="border border-alert px-1.5 py-0.5 text-[11px] text-alert"
+                                className="shrink-0 border border-alert px-1 text-[10px] text-alert"
                               >
-                                已棄用
+                                棄
                               </span>
                             )}
                             {keptBecauseSelected && !b.isArchived && (
                               <span
                                 title="不符目前的篩選條件，但因為已選進配方所以保留顯示"
-                                className="border border-hairline px-1.5 py-0.5 text-[11px] text-ink-soft"
+                                className="shrink-0 border border-hairline px-1 text-[10px] text-ink-soft"
                               >
-                                已選
+                                選
                               </span>
                             )}
-                          </label>
-                          <span className="tnum w-24 text-right text-ink-soft">
+                          </span>
+                          <span className="w-[70px] shrink-0 truncate text-ink-soft">
+                            {b.category ?? '—'}
+                          </span>
+                          <span className="tnum w-[60px] shrink-0 text-right text-ink-soft">
+                            {b.sizeMm ? `${b.sizeMm}mm` : '—'}
+                          </span>
+                          <span className="tnum w-[80px] shrink-0 text-right text-ink-soft">
                             {formatTWD(b.unitCostCents, true)}
                           </span>
                           <span
-                            className={`tnum w-20 text-right ${
+                            className={`tnum w-[60px] shrink-0 text-right ${
                               b.stockQty === 0 ? 'text-alert' : low ? 'text-accent' : 'text-ink-soft'
                             }`}
                             title={low ? `低於安全庫存 ${b.reorderPoint}` : undefined}
                           >
-                            庫存 {b.stockQty}
+                            {b.stockQty}
                           </span>
-                          <span className="w-28 text-right">
+                          <span className="w-[120px] shrink-0 truncate text-ink-soft" title={b.supplierName ?? ''}>
+                            {b.supplierName ?? '—'}
+                          </span>
+
+                          <span className="w-[72px] shrink-0 text-right">
                             {checked && (
                               <input
                                 type="number"
                                 min={1}
-                                value={line?.qty ?? 1}
-                                onChange={(e) => setQty(b.id, Number.parseInt(e.target.value, 10) || 1)}
-                                className="w-16 border-b border-hairline bg-transparent py-1 text-right tnum focus:border-accent focus:outline-none"
+                                placeholder="顆數"
+                                value={line?.qty ?? ''}
+                                onChange={(e) => {
+                                  const raw = e.target.value.trim()
+                                  setQty(b.id, raw === '' ? null : Number.parseInt(raw, 10))
+                                }}
+                                aria-invalid={line !== undefined && (line.qty === null || line.qty < 1)}
+                                className={`w-16 border-b bg-transparent py-1 text-right tnum focus:outline-none ${
+                                  line && (line.qty === null || line.qty < 1)
+                                    ? 'border-alert focus:border-alert'
+                                    : 'border-hairline focus:border-accent'
+                                }`}
                               />
                             )}
                           </span>
-                          <span className="tnum w-24 text-right">
-                            {checked && line ? formatTWD(b.unitCostCents * line.qty, true) : ''}
+                          <span className="tnum w-[84px] shrink-0 text-right">
+                            {checked && line?.qty ? formatTWD(b.unitCostCents * line.qty, true) : ''}
                           </span>
                         </li>
                       )
@@ -1094,13 +1359,39 @@ export default function RecipeEditor({
           >
             重設
           </button>
-          <button
-            onClick={save}
-            disabled={pending}
-            className="bg-ink px-6 py-2.5 text-[13px] tracking-wider text-paper hover:bg-accent disabled:opacity-50"
-          >
-            {pending ? '儲存中…' : '儲存'}
-          </button>
+          {confirmingSave ? (
+            <span className="inline-flex items-center gap-3">
+              <span className="text-[12px] text-ink-soft">
+                存成 {lines.length} 種珠、共 {totalBeadCount} 顆
+                {currentStatus === 'active' ? '，並維持上架' : ''}？
+              </span>
+              <button
+                onClick={() => setConfirmingSave(false)}
+                disabled={pending}
+                className="text-[12px] text-ink-soft underline underline-offset-2 hover:text-ink"
+              >
+                再看看
+              </button>
+              <button
+                onClick={save}
+                disabled={pending}
+                className="bg-ink px-6 py-2.5 text-[13px] tracking-wider text-paper hover:bg-accent disabled:opacity-50"
+              >
+                {pending ? '儲存中…' : '確定儲存'}
+              </button>
+            </span>
+          ) : (
+            <button
+              onClick={() => {
+                setError(null)
+                setConfirmingSave(true)
+              }}
+              disabled={pending}
+              className="bg-ink px-6 py-2.5 text-[13px] tracking-wider text-paper hover:bg-accent disabled:opacity-50"
+            >
+              儲存
+            </button>
+          )}
         </div>
       </div>
 

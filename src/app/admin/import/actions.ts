@@ -5,7 +5,7 @@ import { upsertSupplierByName, findBeadBySource, createBead, adjustStock } from 
 import { calcPurchaseCosts, calcMovingAverageCost } from '@/lib/costing'
 import { parseTaobaoXlsx, type ParsedPurchaseRow } from '@/lib/xlsx-import'
 import { inferCategory } from '@/lib/bead-spec'
-import { purchases, purchaseItems, beads } from '@db/schema'
+import { purchases, purchaseItems, beads, shipments } from '@db/schema'
 import { eq } from 'drizzle-orm'
 import { revalidatePath } from 'next/cache'
 
@@ -58,6 +58,22 @@ export async function confirmImport(
     return { ok: false as const, error: '沒有可匯入的資料。請至少確認一列的顆數。' }
   }
 
+  /*
+   * 這次匯入的所有淘寶訂單歸成一批（集運併單＝一批，一批收一次關稅）。
+   * 先前沒有建立 shipment，導致這批不會出現在「進貨總額」的批次數裡，
+   * 也無法記錄到貨確認——關稅為 0 時尤其明顯（不會跑 backfill-duty）。
+   * 批次名取訂單日期；同日第二次匯入會是另一批，店主可在批次頁改名。
+   */
+  const firstOrderedAt = use.find((u) => u.row.orderedAt)?.row.orderedAt ?? null
+  const batchLabel = firstOrderedAt
+    ? new Date(firstOrderedAt * 1000).toISOString().slice(0, 10)
+    : '未標示日期'
+  const shipmentRows = await db
+    .insert(shipments)
+    .values({ name: `${batchLabel} 進貨`, dutyTwdCents: 0 })
+    .returning({ id: shipments.id })
+  const shipmentId = shipmentRows[0].id
+
   // 依淘寶訂單號分組，運費要按訂單攤提
   const byOrder = new Map<string, typeof use>()
   for (const u of use) {
@@ -99,6 +115,7 @@ export async function confirmImport(
         fxRateX100,
         freightCnyCents: freight,
         status: 'confirmed',
+        shipmentId,
       })
       .returning({ id: purchases.id })
     const purchaseId = inserted[0].id

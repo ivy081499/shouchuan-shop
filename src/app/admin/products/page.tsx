@@ -7,6 +7,7 @@ import { PageTitle, Table, Th, Td, Money, Empty } from '@/ui'
 import { PRODUCT_STATUS_LABEL, type ProductStatusValue } from '@/contracts/product'
 import { calcMargin } from '@/lib/costing'
 import NewProductForm from './NewProductForm.tsx'
+import DeleteProductButton from './DeleteProductButton.tsx'
 
 export const dynamic = 'force-dynamic'
 
@@ -105,12 +106,15 @@ export default async function ProductsPage() {
                     )}
                   </Td>
                   <Td>
-                    <Link
-                      href={`/admin/products/${p.id}`}
-                      className="text-accent underline underline-offset-2"
-                    >
-                      設定配方
-                    </Link>
+                    <span className="inline-flex items-center gap-3">
+                      <Link
+                        href={`/admin/products/${p.id}`}
+                        className="text-accent underline underline-offset-2"
+                      >
+                        設定配方
+                      </Link>
+                      <DeleteProductButton id={p.id} name={p.name} />
+                    </span>
                   </Td>
                 </tr>
               )

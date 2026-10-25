@@ -3,7 +3,7 @@
  * ⚠️ 凍結檔案，不可修改。
  */
 
-import { eq, and, inArray, asc, desc, sql, like, or } from 'drizzle-orm'
+import { eq, and, inArray, asc, desc, sql, like, or, isNotNull } from 'drizzle-orm'
 import type { Db } from './db.ts'
 import { beads, suppliers, stockLedger, recipes, purchases, purchaseItems, shipments } from '@db/schema'
 import type { BeadInput, SupplierInput } from '@/contracts/bead'
@@ -256,6 +256,12 @@ export async function getPurchaseTotals(db: Db) {
 
   const dutyTwdCents = dutyRows.reduce((s, r) => s + r.dutyTwdCents, 0)
 
+  // 批次數：已確認訂單實際掛到的相異批次（與有沒有關稅無關）
+  const batchRows = await db
+    .selectDistinct({ shipmentId: purchases.shipmentId })
+    .from(purchases)
+    .where(and(eq(purchases.status, 'confirmed'), isNotNull(purchases.shipmentId)))
+
   return {
     cnyCents,
     twdCents,
@@ -263,7 +269,68 @@ export async function getPurchaseTotals(db: Db) {
     totalTwdCents: twdCents + dutyTwdCents,
     /** 淘寶訂單數（一張淘寶訂單 = 一筆 purchases） */
     orderCount: rows.length,
-    /** 到貨批次數（多張訂單集運併單算一批，一批收一次關稅） */
-    shipmentCount: dutyRows.length,
+    /**
+     * 到貨批次數（多張訂單集運併單算一批，一批收一次關稅）。
+     *
+     * 取 purchases.shipmentId 的相異值，不是數有關稅的批次——
+     * 曾經誤用 dutyRows.length，關稅為 0 的批次會整批消失。
+     * 2026-09-26 那批關稅 0，報表就只顯示 1 批。
+     */
+    shipmentCount: batchRows.length,
   }
+}
+
+/* ────────────────────────────────────────────────────────────
+   進貨批次（到貨確認）
+
+   一次匯入＝一批（集運併單），關稅一批收一次。
+   `arrivedAt` 有值代表店主已確認收到貨。
+   ──────────────────────────────────────────────────────────── */
+
+export interface ShipmentRow {
+  id: number
+  name: string
+  arrivedAt: number | null
+  dutyTwdCents: number
+  orderCount: number
+  beadCount: number
+  totalQty: number
+}
+
+/** 列出所有進貨批次，新的在前 */
+export async function listShipments(db: Db): Promise<ShipmentRow[]> {
+  const rows = await db
+    .select({
+      id: shipments.id,
+      name: shipments.name,
+      arrivedAt: shipments.arrivedAt,
+      dutyTwdCents: shipments.dutyTwdCents,
+      orderCount: sql<number>`COUNT(DISTINCT ${purchases.id})`,
+      beadCount: sql<number>`COUNT(DISTINCT ${purchaseItems.beadId})`,
+      totalQty: sql<number>`COALESCE(SUM(${purchaseItems.quantity} * ${purchaseItems.beadsPerUnit}), 0)`,
+    })
+    .from(shipments)
+    .leftJoin(purchases, eq(purchases.shipmentId, shipments.id))
+    .leftJoin(purchaseItems, eq(purchaseItems.purchaseId, purchases.id))
+    .groupBy(shipments.id)
+    .orderBy(desc(shipments.id))
+
+  return rows.map((r) => ({
+    ...r,
+    orderCount: Number(r.orderCount ?? 0),
+    beadCount: Number(r.beadCount ?? 0),
+    totalQty: Number(r.totalQty ?? 0),
+  }))
+}
+
+/**
+ * 標記／取消「已收到貨」。
+ * received 為 true 時寫入當下時間，false 清成 null。
+ */
+export async function setShipmentReceived(db: Db, shipmentId: number, received: boolean) {
+  const now = Math.floor(Date.now() / 1000)
+  await db
+    .update(shipments)
+    .set({ arrivedAt: received ? now : null, updatedAt: now })
+    .where(eq(shipments.id, shipmentId))
 }
