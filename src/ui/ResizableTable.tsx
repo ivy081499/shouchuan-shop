@@ -133,8 +133,12 @@ export function ColumnToggles({
             onClick={() => setOpen(false)}
             className="fixed inset-0 z-10 cursor-default"
           />
-          <div className="absolute left-0 top-full z-20 mt-1 min-w-[200px] border border-hairline bg-paper p-3 shadow-sm">
-            <ul className="space-y-1.5">
+          {/*
+            欄位多時面板會超出視窗底部，必須能捲動。
+            max-h 用 vh 而非固定值：視窗高度差很多，寫死會在筆電上又超出一次。
+          */}
+          <div className="absolute left-0 top-full z-20 mt-1 flex max-h-[60vh] min-w-[200px] flex-col border border-hairline bg-paper shadow-sm">
+            <ul className="space-y-1.5 overflow-y-auto p-3">
               {columns.map((c) => (
                 <li key={c.key}>
                   <label

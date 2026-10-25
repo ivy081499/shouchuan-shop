@@ -5,7 +5,7 @@
 
 import { eq, and, inArray, asc, sql } from 'drizzle-orm'
 import type { Db } from './db.ts'
-import { products, productImages, recipes, beads } from '@db/schema'
+import { products, productImages, recipes, beads, orderItems } from '@db/schema'
 import type { ProductInput, RecipeLineInput, ProductDetailView, ProductListItem, RecipeBeadView, ProductStatusValue } from '@/contracts/product'
 import { calcProductCost, calcBuildableQty } from '@/lib/costing'
 
@@ -240,4 +240,40 @@ export async function addProductImage(db: Db, productId: number, r2Key: string, 
 
 export async function deleteProductImage(db: Db, imageId: number) {
   await db.delete(productImages).where(eq(productImages.id, imageId))
+}
+
+/* ────────────────────────────────────────────────────────────
+   刪除手串
+
+   防呆分三層，由呼叫端依序處理：
+   1. 已上架 → 先下架再刪（避免前台出現 404）
+   2. 有訂單 → 一律不給刪（見下方 countOrderItems 的說明）
+   3. 其餘 → 可刪，配方與照片由外鍵 cascade 一併移除
+   ──────────────────────────────────────────────────────────── */
+
+/**
+ * 這個手串被幾筆訂單明細引用。
+ *
+ * > 0 時不可刪除：`order_items.product_id` 的外鍵是 ON DELETE set null，
+ * 刪掉商品會讓訂單明細變成無主資料。明細雖有 product_name 與金額快照，
+ * 帳面金額不會跑掉，但「這筆賣的是哪個商品」的連結會永久斷掉，
+ * 之後想查某商品賣過幾條就查不到了。這類商品應該改為「已下架」。
+ */
+export async function countOrderItems(db: Db, productId: number): Promise<number> {
+  const rows = await db
+    .select({ n: sql<number>`COUNT(*)` })
+    .from(orderItems)
+    .where(eq(orderItems.productId, productId))
+  return Number(rows[0]?.n ?? 0)
+}
+
+/**
+ * 刪除手串。配方與照片靠外鍵 cascade 一起刪掉。
+ * 呼叫端必須先用 countOrderItems 擋下有訂單的商品。
+ *
+ * 注意：R2 上的圖片檔不會被刪除，只刪資料庫紀錄。
+ * 這是刻意的——誤刪時檔案還在，且孤兒檔案不影響任何功能。
+ */
+export async function deleteProduct(db: Db, productId: number) {
+  await db.delete(products).where(eq(products.id, productId))
 }

@@ -21,7 +21,12 @@ export const productInputSchema = z.object({
   slug: slugSchema,
   name: z.string().trim().min(1, '請填寫手串名稱').max(100),
   description: z.string().trim().max(2000).nullable().optional(),
-  priceCents: centsSchema.refine((n) => n > 0, '售價必須大於 0'),
+  /**
+   * 售價。0 代表「還沒定價」，草稿階段允許——
+   * 店主要先選完材料看到成本，才決定賣多少，不該在建立時就被擋下。
+   * 上架仍必須填：`checkReadyToPublish()` 會擋下 price <= 0。
+   */
+  priceCents: centsSchema,
   wristSizeCm: z.number().positive('手圍必須大於 0').max(30).nullable().optional(),
   manualStock: z.number().int().min(0).nullable().optional(),
   status: productStatusSchema.default('draft'),
