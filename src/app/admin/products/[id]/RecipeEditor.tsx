@@ -253,7 +253,7 @@ export default function RecipeEditor({
    * 面板固定在列表左上角，不跟著滑鼠跑——滑鼠位置的 tooltip 會蓋住
    * 正要看的那幾列，挑料時反而礙事。
    */
-  const [preview, setPreview] = useState<BeadOption | null>(null)
+  const [preview, setPreview] = useState<{ bead: BeadOption; x: number; y: number } | null>(null)
 
   /** 按下儲存後先展開確認列，避免改一半誤觸就寫進資料庫 */
   const [confirmingSave, setConfirmingSave] = useState(false)
@@ -856,7 +856,11 @@ export default function RecipeEditor({
               return (
                 <li
                   key={l.beadId}
-                  onMouseEnter={() => setPreview(b)}
+                  onMouseEnter={(e) => setPreview({ bead: b, x: e.clientX, y: e.clientY })}
+                  onMouseMove={(e) =>
+                    setPreview((p) => (p?.bead.id === b.id ? { ...p, x: e.clientX, y: e.clientY } : p))
+                  }
+                  onMouseLeave={() => setPreview(null)}
                   className="flex items-center gap-3 px-5 py-2 text-[13px]"
                 >
                   {b.imageUrl ? (
@@ -1101,50 +1105,6 @@ export default function RecipeEditor({
           </div>
         </div>
 
-        {/*
-          滑過材料列時的預覽，固定在列表最上方。
-          刻意不跟著滑鼠——跟著跑的 tooltip 會蓋住正要比較的那幾列。
-          高度固定，有沒有預覽都佔同樣空間，列表不會跳動。
-        */}
-        <div
-          onMouseLeave={() => setPreview(null)}
-          className="mb-3 flex h-[132px] items-center gap-4 border border-hairline bg-sunk/40 px-4"
-        >
-          {preview ? (
-            <>
-              {preview.imageUrl ? (
-                /* eslint-disable-next-line @next/next/no-img-element */
-                <img
-                  src={preview.imageUrl}
-                  alt={preview.name}
-                  className="h-[108px] w-[108px] shrink-0 border border-hairline bg-paper object-contain"
-                />
-              ) : (
-                <span className="flex h-[108px] w-[108px] shrink-0 items-center justify-center border border-dashed border-hairline text-[12px] text-ink-soft">
-                  沒有圖片
-                </span>
-              )}
-              <div className="min-w-0 text-[13px] leading-relaxed">
-                <p className="font-serif text-[16px] tracking-wider text-ink">{preview.name}</p>
-                <p className="mt-0.5 truncate text-ink-soft" title={preview.sourceTitle ?? ''}>
-                  {preview.sourceTitle ?? '—'}
-                </p>
-                <p className="truncate text-ink-soft" title={preview.sourceSpec ?? ''}>
-                  {preview.sourceSpec ?? '—'}
-                </p>
-                <p className="mt-0.5 text-ink-soft">
-                  {preview.category ?? '未分類'}
-                  {preview.sizeMm ? ` · ${preview.sizeMm}mm` : ''}
-                  {` · ${formatTWD(preview.unitCostCents, true)}／顆`}
-                  {` · 庫存 ${preview.stockQty}`}
-                </p>
-              </div>
-            </>
-          ) : (
-            <span className="text-[12px] text-ink-soft">滑過下面任一列，這裡會顯示那顆珠的大圖與完整名稱。</span>
-          )}
-        </div>
-
         {beads.length === 0 ? (
           <div className="border border-dashed border-hairline px-8 py-12 text-center text-[13px] text-ink-soft">
             還沒有珠子可選。先到「庫存」匯入淘寶訂單。
@@ -1206,8 +1166,13 @@ export default function RecipeEditor({
                       return (
                         <li
                           key={b.id}
-                          onMouseEnter={() => setPreview(b)}
-                          onFocus={() => setPreview(b)}
+                          onMouseEnter={(e) => setPreview({ bead: b, x: e.clientX, y: e.clientY })}
+                          onMouseMove={(e) =>
+                            setPreview((p) =>
+                              p?.bead.id === b.id ? { ...p, x: e.clientX, y: e.clientY } : p,
+                            )
+                          }
+                          onMouseLeave={() => setPreview(null)}
                           className={`flex items-center gap-3 py-2 text-[13px] ${
                             checked ? 'bg-sunk' : ''
                           }`}
@@ -1394,6 +1359,50 @@ export default function RecipeEditor({
           )}
         </div>
       </div>
+
+      {/*
+        滑過材料列時跟著滑鼠的放大預覽。
+        position:fixed 吃視窗座標；pointer-events-none 讓浮層不擋住底下的列，
+        否則滑鼠碰到浮層就觸發 mouseleave，變成閃爍。
+        靠近視窗右側／底部時往反方向翻，避免被切掉。
+      */}
+      {preview && (
+        <div
+          style={{
+            left: preview.x + 16,
+            top: preview.y + 16,
+            transform: `translate(${preview.x > window.innerWidth - 320 ? '-100%' : '0'}, ${
+              preview.y > window.innerHeight - 320 ? '-100%' : '0'
+            })`,
+          }}
+          className="pointer-events-none fixed z-50 w-[280px] border border-hairline bg-paper p-3 shadow-lg"
+        >
+          {preview.bead.imageUrl ? (
+            /* eslint-disable-next-line @next/next/no-img-element */
+            <img
+              src={preview.bead.imageUrl}
+              alt={preview.bead.name}
+              className="h-[240px] w-full border border-hairline bg-sunk object-contain"
+            />
+          ) : (
+            <div className="flex h-[240px] w-full items-center justify-center border border-dashed border-hairline text-[12px] text-ink-soft">
+              這顆還沒有圖片
+            </div>
+          )}
+          <p className="mt-2 font-serif text-[15px] tracking-wider text-ink">{preview.bead.name}</p>
+          <p className="mt-0.5 break-words text-[12px] leading-relaxed text-ink-soft">
+            {preview.bead.sourceTitle ?? '—'}
+          </p>
+          <p className="break-words text-[12px] leading-relaxed text-ink-soft">
+            {preview.bead.sourceSpec ?? '—'}
+          </p>
+          <p className="mt-1 text-[12px] text-ink-soft">
+            {preview.bead.category ?? '未分類'}
+            {preview.bead.sizeMm ? ` · ${preview.bead.sizeMm}mm` : ''}
+            {` · ${formatTWD(preview.bead.unitCostCents, true)}／顆 · 庫存 ${preview.bead.stockQty}`}
+          </p>
+        </div>
+      )}
 
       {zoom && (
         <div

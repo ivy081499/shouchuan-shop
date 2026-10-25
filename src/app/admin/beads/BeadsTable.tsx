@@ -189,6 +189,13 @@ export default function BeadsTable({
   const [fCost, setFCost] = useState<Range>(EMPTY_RANGE)
   const [fStock, setFStock] = useState<Range>(EMPTY_RANGE)
   const [fReorder, setFReorder] = useState<Range>(EMPTY_RANGE)
+  /**
+   * 滑過資料列時跟著滑鼠的放大預覽。
+   * 位置用 position:fixed 存視窗座標——表格外層有 overflow-auto，
+   * absolute 定位的浮層會被裁掉。
+   */
+  const [preview, setPreview] = useState<{ bead: BeadRow; x: number; y: number } | null>(null)
+
   /** 圖片有無：補圖時用「沒有圖」快速找出還沒上傳的 */
   const [fImage, setFImage] = useState<'all' | 'with' | 'without'>('all')
 
@@ -628,7 +635,15 @@ export default function BeadsTable({
                 const isLow = b.reorderPoint > 0 && b.stockQty <= b.reorderPoint
                 // 棄用的列淡化顯示，一眼看得出它不在選料清單裡
                 return (
-                  <tr key={b.id} className={`group/row ${b.isArchived ? 'opacity-45' : ''}`}>
+                  <tr
+                    key={b.id}
+                    onMouseEnter={(e) => setPreview({ bead: b, x: e.clientX, y: e.clientY })}
+                    onMouseMove={(e) =>
+                      setPreview((p) => (p?.bead.id === b.id ? { ...p, x: e.clientX, y: e.clientY } : p))
+                    }
+                    onMouseLeave={() => setPreview(null)}
+                    className={`group/row ${b.isArchived ? 'opacity-45' : ''}`}
+                  >
                     {visible.map((c) => {
                       const cls = `relative border-b border-hairline py-2.5 pr-3 align-middle ${
                         c.align === 'right' ? 'text-right tnum' : 'text-left'
@@ -880,6 +895,52 @@ export default function BeadsTable({
             </select>
             筆
           </label>
+        </div>
+      )}
+
+      {/*
+        滑過資料列時跟著滑鼠的放大預覽。
+        用 position:fixed 直接吃視窗座標——表格外層是 overflow-auto，
+        absolute 定位會被裁掉。
+        pointer-events-none 讓浮層不擋住底下的列，否則滑鼠一碰到浮層
+        就會觸發 mouseleave，變成閃爍。
+        靠近視窗右側／底部時往反方向翻，避免被切掉。
+      */}
+      {preview && (
+        <div
+          style={{
+            left: preview.x + 16,
+            top: preview.y + 16,
+            transform: `translate(${preview.x > window.innerWidth - 320 ? '-100%' : '0'}, ${
+              preview.y > window.innerHeight - 320 ? '-100%' : '0'
+            })`,
+          }}
+          className="pointer-events-none fixed z-50 w-[280px] border border-hairline bg-paper p-3 shadow-lg"
+        >
+          {preview.bead.imageUrl ? (
+            /* eslint-disable-next-line @next/next/no-img-element */
+            <img
+              src={preview.bead.imageUrl}
+              alt={preview.bead.name}
+              className="h-[240px] w-full border border-hairline bg-sunk object-contain"
+            />
+          ) : (
+            <div className="flex h-[240px] w-full items-center justify-center border border-dashed border-hairline text-[12px] text-ink-soft">
+              這顆還沒有圖片
+            </div>
+          )}
+          <p className="mt-2 font-serif text-[15px] tracking-wider text-ink">{preview.bead.name}</p>
+          <p className="mt-0.5 break-words text-[12px] leading-relaxed text-ink-soft">
+            {preview.bead.sourceTitle ?? '—'}
+          </p>
+          <p className="break-words text-[12px] leading-relaxed text-ink-soft">
+            {preview.bead.sourceSpec ?? '—'}
+          </p>
+          <p className="mt-1 text-[12px] text-ink-soft">
+            {preview.bead.category ?? '未分類'}
+            {preview.bead.sizeMm ? ` · ${preview.bead.sizeMm}mm` : ''}
+            {` · 庫存 ${preview.bead.stockQty}`}
+          </p>
         </div>
       )}
     </>
