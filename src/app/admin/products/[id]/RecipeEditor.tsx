@@ -530,8 +530,6 @@ export default function RecipeEditor({
     apply(next)
   }
 
-  const categories = [...new Set(visibleBeads.map((b) => b.category ?? UNCATEGORIZED))].sort()
-
   /** 縮圖邊長：小 36px、大 120px（庫存頁是 44／150，這裡列高較密所以略小） */
   const thumbPx = imgSize === 'lg' ? 120 : 36
   const thumbStyle = { height: thumbPx, width: thumbPx }
@@ -1117,46 +1115,39 @@ export default function RecipeEditor({
             </button>
           </div>
         ) : (
-          <div className="space-y-8">
-            {categories.map((cat) => {
-              const group = visibleBeads.filter((b) => (b.category ?? UNCATEGORIZED) === cat)
-              if (group.length === 0) return null
-              return (
-                <section key={cat}>
-                  <h3 className="mb-2 border-b border-hairline pb-1.5 font-serif text-[15px] tracking-wider text-ink">
-                    {cat}
-                    <span className="ml-2 text-[12px] tracking-normal text-ink-soft">
-                      {group.length}
-                    </span>
-                  </h3>
-                  {/* 欄位標題：點一下換排序欄，再點一下反向，與庫存清單同一套操作 */}
-                  <div className="flex items-center gap-3 border-b border-hairline px-1 py-1.5 text-[11px] text-ink-soft">
-                    <span style={{ width: thumbPx }} className="shrink-0" />
-                    <span className="w-5 shrink-0" />
-                    {PICKER_COLUMNS.map((c) => (
-                      <button
-                        key={c.key}
-                        type="button"
-                        onClick={() => {
-                          if (sortKey === c.key) setSortAsc((v) => !v)
-                          else {
-                            setSortKey(c.key)
-                            setSortAsc(true)
-                          }
-                        }}
-                        className={`${c.width} shrink-0 truncate ${
-                          c.align === 'right' ? 'text-right' : 'text-left'
-                        } hover:text-ink ${sortKey === c.key ? 'text-ink' : ''}`}
-                      >
-                        {c.label}
-                        {sortKey === c.key && (sortAsc ? ' ↑' : ' ↓')}
-                      </button>
-                    ))}
-                    <span className="w-[72px] shrink-0 text-right">顆數</span>
-                    <span className="w-[84px] shrink-0 text-right">小計</span>
-                  </div>
-                  <ul className="divide-y divide-hairline">
-                    {group.map((b) => {
+          <div>
+            {/*
+              不依分類分區（店主要求）——一條手串常混用水晶、玉石與配件，
+              分區反而要在好幾塊之間跳。排序靠欄位標題，分類用上面的篩選籤。
+            */}
+            {/* 欄位標題：點一下換排序欄，再點一下反向，與庫存清單同一套操作 */}
+            <div className="flex items-center gap-3 border-b border-hairline px-1 py-1.5 text-[11px] text-ink-soft">
+              <span style={{ width: thumbPx }} className="shrink-0" />
+              <span className="w-5 shrink-0" />
+              {PICKER_COLUMNS.map((c) => (
+                <button
+                  key={c.key}
+                  type="button"
+                  onClick={() => {
+                    if (sortKey === c.key) setSortAsc((v) => !v)
+                    else {
+                      setSortKey(c.key)
+                      setSortAsc(true)
+                    }
+                  }}
+                  className={`${c.width} shrink-0 truncate ${
+                    c.align === 'right' ? 'text-right' : 'text-left'
+                  } hover:text-ink ${sortKey === c.key ? 'text-ink' : ''}`}
+                >
+                  {c.label}
+                  {sortKey === c.key && (sortAsc ? ' ↑' : ' ↓')}
+                </button>
+              ))}
+              <span className="w-[72px] shrink-0 text-right">顆數</span>
+              <span className="w-[84px] shrink-0 text-right">小計</span>
+            </div>
+            <ul className="divide-y divide-hairline">
+              {visibleBeads.map((b) => {
                       const line = lines.find((l) => l.beadId === b.id)
                       const checked = used.has(b.id)
                       const low = b.reorderPoint > 0 && b.stockQty <= b.reorderPoint
@@ -1285,10 +1276,7 @@ export default function RecipeEditor({
                         </li>
                       )
                     })}
-                  </ul>
-                </section>
-              )
-            })}
+            </ul>
           </div>
         )}
       </section>
