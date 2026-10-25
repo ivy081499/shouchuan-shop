@@ -40,6 +40,8 @@ export interface ProductPhoto {
   id: number
   url: string
   sortOrder: number
+  /** customer＝上架給客人看的成品照；internal＝店主自己的工作照 */
+  audience: 'customer' | 'internal'
 }
 
 /** 數值區間篩選條件 */
@@ -393,7 +395,7 @@ export default function RecipeEditor({
   }
 
   /** 上傳照片。原始檔名不影響存檔，一律由後端依商品 id 與序號重新命名。 */
-  function upload(files: FileList | null) {
+  function upload(files: FileList | null, audience: 'customer' | 'internal' = 'customer') {
     if (!files || files.length === 0) return
     setError(null)
     setMsg(null)
@@ -408,7 +410,7 @@ export default function RecipeEditor({
         const fd = new FormData()
         for (const f of Array.from(files)) fd.append('files', await compressImage(f))
 
-        const r = await uploadProductImages(productId, fd)
+        const r = await uploadProductImages(productId, fd, audience)
         if (!r.ok) {
           setError(r.error)
         } else {
@@ -735,37 +737,57 @@ export default function RecipeEditor({
           </label>
         </div>
 
-        {/* ── 照片 ── */}
+        {/* ── 照片：分「客人看的」與「自己看的」兩區 ── */}
         <div className="border-t border-hairline px-5 py-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <div className="text-[12px] text-ink-soft">商品照片</div>
-              <div className="mt-0.5 text-[12px] text-ink-soft">
-                可一次選多張，<strong className="text-ink">檔名不用先改</strong>——存進電腦時會自動
-                重新命名成 <span className="tnum">{productId}-1.webp</span>、
-                <span className="tnum">{productId}-2.webp</span> 依序排下去
-                （上傳時會自動壓縮成 webp，省空間也載得快）。
-              </div>
-            </div>
-            <label className="cursor-pointer border border-hairline px-4 py-2 text-[13px] hover:border-accent">
-              {uploading ? '上傳中…' : '選擇照片'}
-              <input
-                ref={fileInput}
-                type="file"
-                accept="image/jpeg,image/png,image/webp"
-                multiple
-                disabled={uploading || pending}
-                onChange={(e) => upload(e.target.files)}
-                className="hidden"
-              />
-            </label>
+          <div className="text-[12px] text-ink-soft">商品照片</div>
+          <div className="mt-0.5 text-[12px] text-ink-soft">
+            可一次選多張，<strong className="text-ink">檔名不用先改</strong>——存進電腦時會自動
+            重新命名成 <span className="tnum">{productId}-1.webp</span>、
+            <span className="tnum">{productId}-2.webp</span> 依序排下去
+            （上傳時會自動壓縮成 webp，省空間也載得快）。
           </div>
 
-          {photos.length === 0 ? (
-            <div className="mt-3 text-[13px] text-ink-soft">還沒有照片。</div>
-          ) : (
-            <div className="mt-3 flex flex-wrap gap-3">
-              {photos.map((p) => (
+          {([
+            {
+              key: 'customer' as const,
+              title: '客人看的（上架用）',
+              hint: '前台商品頁顯示的成品照，客人只看得到這一區。',
+            },
+            {
+              key: 'internal' as const,
+              title: '自己看的（工作照）',
+              hint: '材料擺拍、配色比對、製作中紀錄。不會出現在前台；手串列表的縮圖優先用這一區的第一張。',
+            },
+          ]).map((group) => {
+            const groupPhotos = photos.filter((p) => p.audience === group.key)
+            return (
+              <div key={group.key} className="mt-4 border border-hairline p-3">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <div className="text-[13px] text-ink">
+                      {group.title}
+                      <span className="ml-2 text-[12px] text-ink-soft">{groupPhotos.length} 張</span>
+                    </div>
+                    <div className="mt-0.5 text-[11px] leading-relaxed text-ink-soft">{group.hint}</div>
+                  </div>
+                  <label className="cursor-pointer border border-hairline px-4 py-2 text-[13px] hover:border-accent">
+                    {uploading ? '上傳中…' : '選擇照片'}
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      multiple
+                      disabled={uploading || pending}
+                      onChange={(e) => upload(e.target.files, group.key)}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
+
+                {groupPhotos.length === 0 ? (
+                  <div className="mt-3 text-[13px] text-ink-soft">還沒有照片。</div>
+                ) : (
+                  <div className="mt-3 flex flex-wrap gap-3">
+                    {groupPhotos.map((p) => (
                 <div key={p.id} className="w-24">
                   <button
                     type="button"
@@ -787,11 +809,14 @@ export default function RecipeEditor({
                     >
                       移除
                     </button>
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                </div>
-              ))}
-            </div>
-          )}
+                )}
+              </div>
+            )
+          })}
         </div>
       </section>
 

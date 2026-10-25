@@ -1,11 +1,11 @@
 'use server'
 
 import { getDb } from '@/data/db'
-import { createProduct, updateProduct, saveRecipe, addProductImage, deleteProductImage, getProductById, countOrderItems, deleteProduct } from '@/data/products'
+import { createProduct, updateProduct, saveRecipe, addProductImage, deleteProductImage, getProductById, countOrderItems, deleteProduct, restoreProduct } from '@/data/products'
 import { productInputSchema, recipeLineSchema, productStatusSchema } from '@/contracts/product'
 import { zodMessage, slugSchema } from '@/contracts/common'
 import { productImages, recipes } from '@db/schema'
-import { eq, asc } from 'drizzle-orm'
+import { eq, asc, and, isNull } from 'drizzle-orm'
 import { z } from 'zod'
 import { revalidatePath } from 'next/cache'
 
@@ -239,7 +239,12 @@ function extOf(type: string): string {
  *
  * 本機寫進 public/uploads/products/，Workers 寫進 R2。
  */
-export async function uploadProductImages(productId: number, formData: FormData) {
+export async function uploadProductImages(
+  productId: number,
+  formData: FormData,
+  /** 這批照片給誰看：客人看的成品照，或店主自己的工作照 */
+  audience: 'customer' | 'internal' = 'customer',
+) {
   const files = formData.getAll('files').filter((f): f is File => f instanceof File && f.size > 0)
   if (files.length === 0) return { ok: false as const, error: '請選擇圖片檔案。' }
 
@@ -257,7 +262,7 @@ export async function uploadProductImages(productId: number, formData: FormData)
   const existing = await db
     .select({ sortOrder: productImages.sortOrder })
     .from(productImages)
-    .where(eq(productImages.productId, productId))
+    .where(and(eq(productImages.productId, productId), isNull(productImages.deletedAt)))
   let nextIndex = existing.reduce((max, r) => Math.max(max, r.sortOrder), 0) + 1
 
   for (const file of files) {
@@ -281,7 +286,7 @@ export async function uploadProductImages(productId: number, formData: FormData)
       await bucket.put(key, bytes, { httpMetadata: { contentType: file.type } })
     }
 
-    await addProductImage(db, productId, key, undefined, nextIndex)
+    await addProductImage(db, productId, key, undefined, nextIndex, audience)
     nextIndex += 1
   }
 
@@ -294,9 +299,14 @@ export async function uploadProductImages(productId: number, formData: FormData)
 export async function listProductImagesAction(productId: number) {
   const db = await getDb()
   const rows = await db
-    .select({ id: productImages.id, r2Key: productImages.r2Key, sortOrder: productImages.sortOrder })
+    .select({
+      id: productImages.id,
+      r2Key: productImages.r2Key,
+      sortOrder: productImages.sortOrder,
+      audience: productImages.audience,
+    })
     .from(productImages)
-    .where(eq(productImages.productId, productId))
+    .where(and(eq(productImages.productId, productId), isNull(productImages.deletedAt)))
     .orderBy(asc(productImages.sortOrder))
   return rows
 }
@@ -367,9 +377,21 @@ export async function deleteProductAction(productId: number) {
     }
   }
 
+  // 軟刪除：資料留著，可在「已刪除」清單復原
   await deleteProduct(db, productId)
 
   revalidatePath('/admin/products')
   revalidatePath('/admin')
   return { ok: true as const, name: product.name }
+}
+
+/** 復原已刪除的手串，連同當時一起刪掉的配方與照片 */
+export async function restoreProductAction(productId: number) {
+  const db = await getDb()
+  const res = await restoreProduct(db, productId)
+  if (!res.ok) return res
+
+  revalidatePath('/admin/products')
+  revalidatePath('/admin')
+  return { ok: true as const }
 }

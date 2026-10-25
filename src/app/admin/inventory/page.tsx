@@ -49,6 +49,7 @@ export default async function InventoryPage() {
           stockQty: b.stockQty,
           reorderPoint: b.reorderPoint,
           supplierName: b.supplierName,
+          colorFamily: b.colorFamily,
           sourceTitle: b.sourceTitle,
           sourceSpec: b.sourceSpec,
           sourceUrl: b.sourceUrl,

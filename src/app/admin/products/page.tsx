@@ -1,6 +1,6 @@
 import Link from 'next/link'
-import { getDb } from '@/data/db'
-import { listAdminProducts } from '@/data/products'
+import { getDb, getPublicImageBase } from '@/data/db'
+import { listAdminProducts, listDeletedProducts } from '@/data/products'
 import { listBeads } from '@/data/beads'
 import { productImages } from '@db/schema'
 import { PageTitle, Table, Th, Td, Money, Empty } from '@/ui'
@@ -8,21 +8,51 @@ import { PRODUCT_STATUS_LABEL, type ProductStatusValue } from '@/contracts/produ
 import { calcMargin } from '@/lib/costing'
 import NewProductForm from './NewProductForm.tsx'
 import DeleteProductButton from './DeleteProductButton.tsx'
+import DeletedProducts from './DeletedProducts.tsx'
+import { isNull } from 'drizzle-orm'
 
 export const dynamic = 'force-dynamic'
 
 export default async function ProductsPage() {
   const db = await getDb()
-  const [products, beads, imageRows] = await Promise.all([
+  const [products, beads, imageRows, deleted, imageBase] = await Promise.all([
     listAdminProducts(db),
     listBeads(db),
     // 一次取回所有商品的照片，避免逐筆查詢（見 03-ARCHITECTURE 的 N+1 守則）
-    db.select({ productId: productImages.productId }).from(productImages),
+    db
+      .select({
+        productId: productImages.productId,
+        r2Key: productImages.r2Key,
+        audience: productImages.audience,
+        sortOrder: productImages.sortOrder,
+      })
+      .from(productImages)
+      .where(isNull(productImages.deletedAt)),
+    listDeletedProducts(db),
+    getPublicImageBase(),
   ])
+
+  /** 本機沒有 R2 公開網址時，檔案實際在 public/uploads/ 底下 */
+  const toUrl = (r2Key: string) =>
+    imageBase ? `${imageBase.replace(/\/$/, '')}/${r2Key}` : `/uploads/${r2Key}`
 
   const photoCount = new Map<number, number>()
   for (const r of imageRows) {
     photoCount.set(r.productId, (photoCount.get(r.productId) ?? 0) + 1)
+  }
+
+  /*
+   * 列表縮圖優先用「自己看」的工作照——店主要的是認出這條是哪一款，
+   * 工作照通常拍得比上架成品照更直白。沒有工作照才退回成品照。
+   */
+  const sorted = [...imageRows].sort((a, b) => a.sortOrder - b.sortOrder)
+  const thumb = new Map<number, string>()
+  for (const r of sorted) {
+    if (r.audience === 'internal' && !thumb.has(r.productId)) thumb.set(r.productId, r.r2Key)
+  }
+  // 沒有工作照的才退回成品照
+  for (const r of sorted) {
+    if (!thumb.has(r.productId)) thumb.set(r.productId, r.r2Key)
   }
 
   return (
@@ -49,6 +79,7 @@ export default async function ProductsPage() {
         <Table>
           <thead>
             <tr>
+              <Th>圖</Th>
               <Th>名稱</Th>
               <Th>狀態</Th>
               <Th align="right">售價</Th>
@@ -75,6 +106,18 @@ export default async function ProductsPage() {
 
               return (
                 <tr key={p.id}>
+                  <Td>
+                    {thumb.get(p.id) ? (
+                      /* eslint-disable-next-line @next/next/no-img-element */
+                      <img
+                        src={toUrl(thumb.get(p.id) as string)}
+                        alt={p.name}
+                        className="h-12 w-12 border border-hairline object-cover"
+                      />
+                    ) : (
+                      <span className="block h-12 w-12 border border-dashed border-hairline bg-sunk" />
+                    )}
+                  </Td>
                   <Td>{p.name}</Td>
                   <Td>{PRODUCT_STATUS_LABEL[p.status as ProductStatusValue]}</Td>
                   <Td align="right" numeric>
@@ -122,6 +165,8 @@ export default async function ProductsPage() {
           </tbody>
         </Table>
       )}
+
+      <DeletedProducts rows={deleted} />
     </>
   )
 }

@@ -56,6 +56,14 @@ export const beads = sqliteTable(
     sizeMm: real('size_mm'),
     /** 顏色描述，供前台「配方透視」顯示用 */
     colorHex: text('color_hex'),
+    /**
+     * 顏色分類（彩虹七色＋無彩色），供後台篩選「我要紅色的料」。
+     * 與 colorHex 不同：colorHex 是實際色碼用於顯示，
+     * 這裡是粗分類，同一色系的深淺都歸同一類。
+     */
+    colorFamily: text('color_family', {
+      enum: ['red', 'orange', 'yellow', 'green', 'blue', 'indigo', 'violet', 'neutral'],
+    }),
 
     /**
      * 珠子圖片網址。後台選珠時顯示縮圖，用來辨認「沙金桶珠 24款」這類
@@ -264,9 +272,20 @@ export const products = sqliteTable(
     /** 排序權重，數字越小越前面 */
     sortOrder: integer('sort_order').notNull().default(0),
 
+    /**
+     * 軟刪除時間；非 null 代表已刪除。
+     * 與 status='archived'（下架）不同——下架之後可能再上架，
+     * 刪除是店主想丟掉，只是留著可以復原。
+     */
+    deletedAt: integer('deleted_at'),
+
     ...timestamps,
   },
-  (t) => [uniqueIndex('products_slug_uq').on(t.slug), index('products_status_idx').on(t.status)],
+  (t) => [
+    uniqueIndex('products_slug_uq').on(t.slug),
+    index('products_status_idx').on(t.status),
+    index('products_deleted_idx').on(t.deletedAt),
+  ],
 )
 
 /* ────────────────────────────────────────────────────────────
@@ -283,9 +302,23 @@ export const productImages = sqliteTable(
     r2Key: text('r2_key').notNull(),
     alt: text('alt'),
     sortOrder: integer('sort_order').notNull().default(0),
+    /**
+     * 這張圖給誰看。
+     * customer＝上架給客人看的成品照；internal＝店主自己的工作照
+     * （材料擺拍、配色比對、製作中紀錄）。兩種都可以有多張。
+     * 前台只拿 customer；後台列表的縮圖優先拿 internal 的第一張。
+     */
+    audience: text('audience', { enum: ['customer', 'internal'] })
+      .notNull()
+      .default('customer'),
+    /** 軟刪除時間；非 null 代表已刪除，畫面不顯示但資料留著可復原 */
+    deletedAt: integer('deleted_at'),
     ...timestamps,
   },
-  (t) => [index('product_images_product_idx').on(t.productId)],
+  (t) => [
+    index('product_images_product_idx').on(t.productId),
+    index('product_images_audience_idx').on(t.productId, t.audience),
+  ],
 )
 
 /* ────────────────────────────────────────────────────────────
@@ -306,6 +339,8 @@ export const recipes = sqliteTable(
     qty: integer('qty').notNull(),
     /** 在手串上的排列位置，供前台「配方透視」依序畫出 */
     position: integer('position').notNull().default(0),
+    /** 軟刪除時間；非 null 代表已從配方移除，資料留著可復原 */
+    deletedAt: integer('deleted_at'),
     ...timestamps,
   },
   (t) => [

@@ -11,6 +11,8 @@ import {
 } from '@/ui/ResizableTable'
 import BeadImageCell from './BeadImageCell.tsx'
 import EditableCell from './EditableCell.tsx'
+import { COLOR_FAMILY_LABEL, type ColorFamily } from '@/contracts/bead'
+import { updateBeadFields } from './actions.ts'
 import StockCell from './StockCell.tsx'
 import RetireCell from './RetireCell.tsx'
 
@@ -24,6 +26,8 @@ export interface BeadRow {
   stockQty: number
   reorderPoint: number
   supplierName: string | null
+  /** 顏色分類（彩虹七色＋無彩色），null＝還沒設定 */
+  colorFamily: ColorFamily | null
   /** 淘寶原始商品名與規格，供對照匯出的 Excel */
   sourceTitle: string | null
   sourceSpec: string | null
@@ -46,6 +50,7 @@ const COLUMNS: Column[] = [
   { key: 'sourceSpec', label: '型號款式（原始）', width: 200 },
   { key: 'name', label: '簡稱', width: 190 },
   { key: 'category', label: '分類', width: 90 },
+  { key: 'colorFamily', label: '顏色', width: 80 },
   { key: 'sizeMm', label: '尺寸', width: 80, align: 'right' },
   { key: 'unitCostCents', label: '單顆成本', width: 100, align: 'right' },
   { key: 'stockQty', label: '庫存', width: 80, align: 'right' },
@@ -58,7 +63,7 @@ const COLUMNS: Column[] = [
 const UNCATEGORIZED = '（未分類）'
 const NO_SUPPLIER = '（無供應商）'
 
-type SortKey = 'name' | 'sourceTitle' | 'sourceSpec' | 'category' | 'sizeMm' | 'unitCostCents' | 'stockQty' | 'reorderPoint' | 'stockValue' | 'supplierName'
+type SortKey = 'name' | 'sourceTitle' | 'sourceSpec' | 'category' | 'colorFamily' | 'sizeMm' | 'unitCostCents' | 'stockQty' | 'reorderPoint' | 'stockValue' | 'supplierName'
 type NumField = 'sizeMm' | 'unitCostCents' | 'stockQty' | 'reorderPoint'
 
 /** 數值欄的範圍條件，空字串代表不限 */
@@ -198,6 +203,8 @@ export default function BeadsTable({
 
   /** 圖片有無：補圖時用「沒有圖」快速找出還沒上傳的 */
   const [fImage, setFImage] = useState<'all' | 'with' | 'without'>('all')
+  /** 顏色篩選（可複選）；空集合＝不限 */
+  const [fColors, setFColors] = useState<Set<string>>(new Set())
 
   const [sortKey, setSortKey] = useState<SortKey>('name')
   const [sortAsc, setSortAsc] = useState(true)
@@ -292,6 +299,7 @@ export default function BeadsTable({
       if (!inRange(b.unitCostCents, fCost, 100)) return false
       if (!inRange(b.stockQty, fStock)) return false
       if (!inRange(b.reorderPoint, fReorder)) return false
+      if (fColors.size > 0 && !fColors.has(b.colorFamily ?? '（未設定）')) return false
       if (fImage === 'with' && !b.imageUrl) return false
       if (fImage === 'without' && b.imageUrl) return false
       return true
@@ -321,6 +329,7 @@ export default function BeadsTable({
     fStock,
     fReorder,
     fImage,
+    fColors,
     sortKey,
     sortAsc,
   ])
@@ -330,6 +339,7 @@ export default function BeadsTable({
     (fCats.size ? 1 : 0) +
     (fSups.size ? 1 : 0) +
     (fImage !== 'all' ? 1 : 0) +
+    (fColors.size ? 1 : 0) +
     [fSize, fCost, fStock, fReorder].filter((r) => r.min.trim() || r.max.trim()).length
 
   const totalPages = Math.max(1, Math.ceil(rows.length / perPage))
@@ -368,6 +378,7 @@ export default function BeadsTable({
     setFStock(EMPTY_RANGE)
     setFReorder(EMPTY_RANGE)
     setFImage('all')
+    setFColors(new Set())
   }
 
   function sortBy(key: SortKey) {
@@ -485,6 +496,34 @@ export default function BeadsTable({
                   {label}
                 </button>
               ))}
+            </div>
+          </div>
+
+          <div className="text-[12px] lg:col-span-2">
+            <span className="block text-ink-soft">顏色（可複選）</span>
+            <div className="mt-1.5">
+              <ChipGroup
+                options={[...Object.keys(COLOR_FAMILY_LABEL).map(
+                  (k) => COLOR_FAMILY_LABEL[k as ColorFamily],
+                ), '（未設定）']}
+                selected={
+                  new Set(
+                    [...fColors].map((v) =>
+                      v === '（未設定）' ? v : COLOR_FAMILY_LABEL[v as ColorFamily],
+                    ),
+                  )
+                }
+                onToggle={(label) => {
+                  const key =
+                    label === '（未設定）'
+                      ? '（未設定）'
+                      : (Object.keys(COLOR_FAMILY_LABEL) as ColorFamily[]).find(
+                          (k) => COLOR_FAMILY_LABEL[k] === label,
+                        )
+                  if (!key) return
+                  toggleSet(fColors, key, setFColors)
+                }}
+              />
             </div>
           </div>
 
@@ -712,6 +751,31 @@ export default function BeadsTable({
                                 options={categories}
                                 placeholder="未分類"
                               />
+                              {grip}
+                            </td>
+                          )
+                        case 'colorFamily':
+                          return (
+                            <td key={c.key} className={cls}>
+                              {/* 固定八個選項，用原生 select 比自由輸入不易打錯 */}
+                              <select
+                                defaultValue={b.colorFamily ?? ''}
+                                onChange={async (e) => {
+                                  const v = e.target.value
+                                  // action 內有 revalidatePath，不必自行 refresh
+                                  await updateBeadFields(b.id, {
+                                    colorFamily: v === '' ? null : (v as ColorFamily),
+                                  })
+                                }}
+                                className="w-full border-b border-dashed border-hairline bg-transparent py-1 text-[13px] focus:border-accent focus:outline-none"
+                              >
+                                <option value="">—</option>
+                                {(Object.keys(COLOR_FAMILY_LABEL) as ColorFamily[]).map((k) => (
+                                  <option key={k} value={k}>
+                                    {COLOR_FAMILY_LABEL[k]}
+                                  </option>
+                                ))}
+                              </select>
                               {grip}
                             </td>
                           )

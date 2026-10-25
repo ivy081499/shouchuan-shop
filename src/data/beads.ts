@@ -77,6 +77,7 @@ export async function listBeads(db: Db, filter: BeadFilter = {}) {
       category: beads.category,
       sizeMm: beads.sizeMm,
       colorHex: beads.colorHex,
+      colorFamily: beads.colorFamily,
       imageUrl: beads.imageUrl,
       supplierId: beads.supplierId,
       supplierName: suppliers.name,
