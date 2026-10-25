@@ -65,6 +65,111 @@ type NumField = 'sizeMm' | 'unitCostCents' | 'stockQty' | 'reorderPoint'
 type Range = { min: string; max: string }
 const EMPTY_RANGE: Range = { min: '', max: '' }
 
+/*
+ * 以下三個小元件必須定義在 BeadsTable 外面。
+ *
+ * 放在元件內部時，每次 render 都是一個「新的函式」＝新的元件型別，
+ * React 會把整棵子樹卸載重建：輸入框因此在每打一個字後失去焦點，
+ * 需要連打多位數的欄位（例如安全庫存上下限）等於不能用。
+ */
+
+/**
+ * 會被截斷的文字格，滑過顯示完整內容。
+ *
+ * tooltip 用 position:fixed 並在 hover 時才量座標——
+ * 表格外層有 overflow-x-auto，absolute 定位的 tooltip 會被裁掉。
+ */
+function Truncated({ text }: { text: string | null }) {
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(null)
+  if (!text) return <span className="text-ink-soft">—</span>
+  return (
+    <>
+      <span
+        onMouseEnter={(e) => {
+          const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+          setPos({ x: r.left, y: r.bottom + 4 })
+        }}
+        onMouseLeave={() => setPos(null)}
+        className="block truncate"
+      >
+        {text}
+      </span>
+      {pos && (
+        <span
+          style={{ left: pos.x, top: pos.y }}
+          className="pointer-events-none fixed z-50 w-max max-w-md whitespace-normal break-words bg-ink px-3 py-2 text-left text-[12px] leading-relaxed text-paper shadow-lg"
+        >
+          {text}
+        </span>
+      )}
+    </>
+  )
+}
+
+/** 數值範圍輸入（下限 – 上限），兩端都可留空代表不限 */
+function RangeInput({
+  value,
+  onChange,
+  placeholder,
+}: {
+  value: Range
+  onChange: (r: Range) => void
+  placeholder: string
+}) {
+  return (
+    <div className="flex items-center gap-1">
+      <input
+        value={value.min}
+        onChange={(e) => onChange({ ...value, min: e.target.value })}
+        placeholder={placeholder}
+        inputMode="decimal"
+        className="w-14 border-b border-hairline bg-transparent py-0.5 text-right text-[12px] tnum focus:border-accent focus:outline-none"
+      />
+      <span className="text-[11px] text-ink-soft">–</span>
+      <input
+        value={value.max}
+        onChange={(e) => onChange({ ...value, max: e.target.value })}
+        placeholder="不限"
+        inputMode="decimal"
+        className="w-14 border-b border-hairline bg-transparent py-0.5 text-right text-[12px] tnum focus:border-accent focus:outline-none"
+      />
+    </div>
+  )
+}
+
+/** 多選籤 */
+function ChipGroup({
+  options,
+  selected,
+  onToggle,
+}: {
+  options: string[]
+  selected: Set<string>
+  onToggle: (v: string) => void
+}) {
+  return (
+    <div className="flex flex-wrap gap-1">
+      {options.map((o) => {
+        const on = selected.has(o)
+        return (
+          <button
+            key={o}
+            type="button"
+            onClick={() => onToggle(o)}
+            className={`border px-2 py-0.5 text-[12px] transition ${
+              on
+                ? 'border-ink bg-ink text-paper'
+                : 'border-hairline text-ink-soft hover:border-accent hover:text-ink'
+            }`}
+          >
+            {o}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 export default function BeadsTable({
   beads,
   categories,
@@ -135,43 +240,6 @@ export default function BeadsTable({
 
   const colTotal = visible.reduce((sum, c) => sum + (widths[c.key] ?? c.width), 0)
   const slack = Math.max(0, containerWidth - colTotal)
-
-  /**
-   * 會被截斷的文字格。
-   * 自繪 tooltip 而非用 title——原生 tooltip 要停留約一秒才出現，有時根本不觸發。
-   */
-  /**
-   * 會被截斷的文字格，滑過顯示完整內容。
-   *
-   * tooltip 用 position:fixed 並在 hover 時才量座標——
-   * 表格外層有 overflow-x-auto，absolute 定位的 tooltip 會被裁掉。
-   */
-  function Truncated({ text }: { text: string | null }) {
-    const [pos, setPos] = useState<{ x: number; y: number } | null>(null)
-    if (!text) return <span className="text-ink-soft">—</span>
-    return (
-      <>
-        <span
-          onMouseEnter={(e) => {
-            const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
-            setPos({ x: r.left, y: r.bottom + 4 })
-          }}
-          onMouseLeave={() => setPos(null)}
-          className="block truncate"
-        >
-          {text}
-        </span>
-        {pos && (
-          <span
-            style={{ left: pos.x, top: pos.y }}
-            className="pointer-events-none fixed z-50 w-max max-w-md whitespace-normal break-words bg-ink px-3 py-2 text-left text-[12px] leading-relaxed text-paper shadow-lg"
-          >
-            {text}
-          </span>
-        )}
-      </>
-    )
-  }
 
   const supplierOptions = useMemo(
     () => [...new Set(beads.map((b) => b.supplierName ?? NO_SUPPLIER))].sort(),
@@ -304,68 +372,6 @@ export default function BeadsTable({
   }
 
   /** 數值範圍輸入 */
-  function RangeInput({
-    value,
-    onChange,
-    placeholder,
-  }: {
-    value: Range
-    onChange: (r: Range) => void
-    placeholder: string
-  }) {
-    return (
-      <div className="flex items-center gap-1">
-        <input
-          value={value.min}
-          onChange={(e) => onChange({ ...value, min: e.target.value })}
-          placeholder={placeholder}
-          inputMode="decimal"
-          className="w-14 border-b border-hairline bg-transparent py-0.5 text-right text-[12px] tnum focus:border-accent focus:outline-none"
-        />
-        <span className="text-[11px] text-ink-soft">–</span>
-        <input
-          value={value.max}
-          onChange={(e) => onChange({ ...value, max: e.target.value })}
-          placeholder="不限"
-          inputMode="decimal"
-          className="w-14 border-b border-hairline bg-transparent py-0.5 text-right text-[12px] tnum focus:border-accent focus:outline-none"
-        />
-      </div>
-    )
-  }
-
-  /** 多選籤 */
-  function ChipGroup({
-    options,
-    selected,
-    onToggle,
-  }: {
-    options: string[]
-    selected: Set<string>
-    onToggle: (v: string) => void
-  }) {
-    return (
-      <div className="flex flex-wrap gap-1">
-        {options.map((o) => {
-          const on = selected.has(o)
-          return (
-            <button
-              key={o}
-              type="button"
-              onClick={() => onToggle(o)}
-              className={`border px-2 py-0.5 text-[12px] transition ${
-                on
-                  ? 'border-ink bg-ink text-paper'
-                  : 'border-hairline text-ink-soft hover:border-accent hover:text-ink'
-              }`}
-            >
-              {o}
-            </button>
-          )
-        })}
-      </div>
-    )
-  }
 
   return (
     <>
