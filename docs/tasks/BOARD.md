@@ -156,6 +156,40 @@
 
   **只有前台階段 D 需要**。階段 A／B／C 都不依賴它，可以先做完再回來處理。
 
+- [ ] **新增 `purchase_lists` + `purchase_list_items` 表** — 店主主動挑貨的採購清單
+  **店主 2026-10-26 指示「要能存檔，我開 schema session」**，規格已寫好，待建表。
+  完整規格見 `docs/14-採購清單功能.md`。
+
+  ```
+  purchase_lists
+    id, name, note,
+    status（draft / ordered / closed，預設 draft）,
+    created_at, updated_at
+
+  purchase_list_items
+    id, list_id → purchase_lists.id ON DELETE CASCADE,
+    bead_id → beads.id,
+    qty（預設 0）,
+    source（manual / shortage，預設 manual）,
+    note, created_at, updated_at
+    UNIQUE (list_id, bead_id)
+  ```
+
+  **需求背景**：現有採購需求表是訂單驅動的，零客戶階段永遠空白。
+  店主的真實需求是主動挑貨——2026-10-26 盤點顯示貴珠分散在 17 種、
+  其中 10 種僅 3–5 顆，擺攤目標 30 條但只能做約 19 條，需要挑出補深的品項。
+
+  **為什麼非改 schema 不可**：勾選狀態與數量必須跨 session 留存
+  （店主明確要求存檔）。`beads` 表無可用欄位，且 CLAUDE.md 禁止
+  把資料塞進 note 欄位繞道。
+
+  ⚠️ 這是**真正的 schema 變更，會產生 migration**。
+  必須另開 schema session，確認沒有其他工作流同時進行。
+
+  **不影響既有功能**：`src/data/reports.ts`（凍結檔）不修改，
+  新功能走新檔 `src/data/purchase-lists.ts`，
+  畫面在 `src/app/admin/reports/purchase-list/**`（S5 可寫路徑）。
+
 ---
 
 ## ⚠️ 已知問題（不是這次改的，但要記著）
