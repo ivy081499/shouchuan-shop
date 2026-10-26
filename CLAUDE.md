@@ -57,6 +57,10 @@ mkdir -p public/uploads/beads && cp ../../../public/uploads/beads/*.png public/u
 現行資料庫 `~/Desktop/手串/.data/local.sqlite`，**進貨作業絕不可直接寫它**。
 
 **完整步驟見 `docs/09-進貨SOP.md`，照做不要自己發明流程。**
+
+**每批進貨一定要留兩份 DB 備份**：合併前 `before-<批次名>-<時間>.sqlite`、
+合併後 `after-<批次名>-<時間>.sqlite`，都放 `backups/`。
+店主 2026-10-24 要求，兩份都做完這批才算結束。舊備份不要刪。
 驗證無誤、店主確認後才合併。詳見 `docs/decisions/ADR-0011`。
 
 **關稅**：一批貨清關一次收一筆，掛在 `shipments` 表，
@@ -110,6 +114,7 @@ git status --short
 | **進貨、匯入、關稅** | **`docs/09-進貨SOP.md` ← 動手前必讀** |
 | **自建前台、上架補完** | **`docs/10-前台與上架計畫.md` ← 動前台前必讀** |
 | 定價、行銷、擺攤、備貨 | `docs/10-MARKET.md` |
+| **要報名哪個市集** | **`docs/11-擺攤市集清單.md` 含報名連結與費用** |
 | 「這件事為什麼這樣決定？」 | `docs/decisions/` — **不要重新討論已定案的事** |
 
 ---

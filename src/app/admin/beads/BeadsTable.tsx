@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Money } from '@/ui'
 import {
   useColumnWidths,
@@ -65,6 +65,111 @@ type NumField = 'sizeMm' | 'unitCostCents' | 'stockQty' | 'reorderPoint'
 type Range = { min: string; max: string }
 const EMPTY_RANGE: Range = { min: '', max: '' }
 
+/*
+ * 以下三個小元件必須定義在 BeadsTable 外面。
+ *
+ * 放在元件內部時，每次 render 都是一個「新的函式」＝新的元件型別，
+ * React 會把整棵子樹卸載重建：輸入框因此在每打一個字後失去焦點，
+ * 需要連打多位數的欄位（例如安全庫存上下限）等於不能用。
+ */
+
+/**
+ * 會被截斷的文字格，滑過顯示完整內容。
+ *
+ * tooltip 用 position:fixed 並在 hover 時才量座標——
+ * 表格外層有 overflow-x-auto，absolute 定位的 tooltip 會被裁掉。
+ */
+function Truncated({ text }: { text: string | null }) {
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(null)
+  if (!text) return <span className="text-ink-soft">—</span>
+  return (
+    <>
+      <span
+        onMouseEnter={(e) => {
+          const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+          setPos({ x: r.left, y: r.bottom + 4 })
+        }}
+        onMouseLeave={() => setPos(null)}
+        className="block truncate"
+      >
+        {text}
+      </span>
+      {pos && (
+        <span
+          style={{ left: pos.x, top: pos.y }}
+          className="pointer-events-none fixed z-50 w-max max-w-md whitespace-normal break-words bg-ink px-3 py-2 text-left text-[12px] leading-relaxed text-paper shadow-lg"
+        >
+          {text}
+        </span>
+      )}
+    </>
+  )
+}
+
+/** 數值範圍輸入（下限 – 上限），兩端都可留空代表不限 */
+function RangeInput({
+  value,
+  onChange,
+  placeholder,
+}: {
+  value: Range
+  onChange: (r: Range) => void
+  placeholder: string
+}) {
+  return (
+    <div className="flex items-center gap-1">
+      <input
+        value={value.min}
+        onChange={(e) => onChange({ ...value, min: e.target.value })}
+        placeholder={placeholder}
+        inputMode="decimal"
+        className="w-14 border-b border-hairline bg-transparent py-0.5 text-right text-[12px] tnum focus:border-accent focus:outline-none"
+      />
+      <span className="text-[11px] text-ink-soft">–</span>
+      <input
+        value={value.max}
+        onChange={(e) => onChange({ ...value, max: e.target.value })}
+        placeholder="不限"
+        inputMode="decimal"
+        className="w-14 border-b border-hairline bg-transparent py-0.5 text-right text-[12px] tnum focus:border-accent focus:outline-none"
+      />
+    </div>
+  )
+}
+
+/** 多選籤 */
+function ChipGroup({
+  options,
+  selected,
+  onToggle,
+}: {
+  options: string[]
+  selected: Set<string>
+  onToggle: (v: string) => void
+}) {
+  return (
+    <div className="flex flex-wrap gap-1">
+      {options.map((o) => {
+        const on = selected.has(o)
+        return (
+          <button
+            key={o}
+            type="button"
+            onClick={() => onToggle(o)}
+            className={`border px-2 py-0.5 text-[12px] transition ${
+              on
+                ? 'border-ink bg-ink text-paper'
+                : 'border-hairline text-ink-soft hover:border-accent hover:text-ink'
+            }`}
+          >
+            {o}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 export default function BeadsTable({
   beads,
   categories,
@@ -84,6 +189,15 @@ export default function BeadsTable({
   const [fCost, setFCost] = useState<Range>(EMPTY_RANGE)
   const [fStock, setFStock] = useState<Range>(EMPTY_RANGE)
   const [fReorder, setFReorder] = useState<Range>(EMPTY_RANGE)
+  /**
+   * 滑過資料列時跟著滑鼠的放大預覽。
+   * 位置用 position:fixed 存視窗座標——表格外層有 overflow-auto，
+   * absolute 定位的浮層會被裁掉。
+   */
+  const [preview, setPreview] = useState<{ bead: BeadRow; x: number; y: number } | null>(null)
+
+  /** 圖片有無：補圖時用「沒有圖」快速找出還沒上傳的 */
+  const [fImage, setFImage] = useState<'all' | 'with' | 'without'>('all')
 
   const [sortKey, setSortKey] = useState<SortKey>('name')
   const [sortAsc, setSortAsc] = useState(true)
@@ -113,42 +227,26 @@ export default function BeadsTable({
 
   const show = (k: string) => !hidden.has(k)
 
-  /**
-   * 會被截斷的文字格。
-   * 自繪 tooltip 而非用 title——原生 tooltip 要停留約一秒才出現，有時根本不觸發。
+  /*
+   * 表格撐滿容器用的量測。
+   * 欄寬總和小於容器時，差額 slack 補給最後一欄，避免右側留白；
+   * 總和較寬時 slack 為 0，維持原寬並由外層橫向捲動。
    */
-  /**
-   * 會被截斷的文字格，滑過顯示完整內容。
-   *
-   * tooltip 用 position:fixed 並在 hover 時才量座標——
-   * 表格外層有 overflow-x-auto，absolute 定位的 tooltip 會被裁掉。
-   */
-  function Truncated({ text }: { text: string | null }) {
-    const [pos, setPos] = useState<{ x: number; y: number } | null>(null)
-    if (!text) return <span className="text-ink-soft">—</span>
-    return (
-      <>
-        <span
-          onMouseEnter={(e) => {
-            const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
-            setPos({ x: r.left, y: r.bottom + 4 })
-          }}
-          onMouseLeave={() => setPos(null)}
-          className="block truncate"
-        >
-          {text}
-        </span>
-        {pos && (
-          <span
-            style={{ left: pos.x, top: pos.y }}
-            className="pointer-events-none fixed z-50 w-max max-w-md whitespace-normal break-words bg-ink px-3 py-2 text-left text-[12px] leading-relaxed text-paper shadow-lg"
-          >
-            {text}
-          </span>
-        )}
-      </>
-    )
-  }
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const [containerWidth, setContainerWidth] = useState(0)
+
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(([entry]) => {
+      setContainerWidth(Math.floor(entry.contentRect.width))
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+
+  const colTotal = visible.reduce((sum, c) => sum + (widths[c.key] ?? c.width), 0)
+  const slack = Math.max(0, containerWidth - colTotal)
 
   const supplierOptions = useMemo(
     () => [...new Set(beads.map((b) => b.supplierName ?? NO_SUPPLIER))].sort(),
@@ -172,6 +270,8 @@ export default function BeadsTable({
   }
 
   const retiredCount = beads.filter((b) => b.isArchived).length
+  /** 還沒上圖的數量：只算還在用的，棄用料不需要補圖 */
+  const noImageCount = beads.filter((b) => !b.isArchived && !b.imageUrl).length
 
   const rows = useMemo(() => {
     const nameQ = fName.trim().toLowerCase()
@@ -192,6 +292,8 @@ export default function BeadsTable({
       if (!inRange(b.unitCostCents, fCost, 100)) return false
       if (!inRange(b.stockQty, fStock)) return false
       if (!inRange(b.reorderPoint, fReorder)) return false
+      if (fImage === 'with' && !b.imageUrl) return false
+      if (fImage === 'without' && b.imageUrl) return false
       return true
     })
 
@@ -208,12 +310,26 @@ export default function BeadsTable({
       if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * dir
       return String(va).localeCompare(String(vb), 'zh-Hant') * dir
     })
-  }, [beads, retireView, fName, fCats, fSups, fSize, fCost, fStock, fReorder, sortKey, sortAsc])
+  }, [
+    beads,
+    retireView,
+    fName,
+    fCats,
+    fSups,
+    fSize,
+    fCost,
+    fStock,
+    fReorder,
+    fImage,
+    sortKey,
+    sortAsc,
+  ])
 
   const activeCount =
     (fName.trim() ? 1 : 0) +
     (fCats.size ? 1 : 0) +
     (fSups.size ? 1 : 0) +
+    (fImage !== 'all' ? 1 : 0) +
     [fSize, fCost, fStock, fReorder].filter((r) => r.min.trim() || r.max.trim()).length
 
   const totalPages = Math.max(1, Math.ceil(rows.length / perPage))
@@ -251,6 +367,7 @@ export default function BeadsTable({
     setFCost(EMPTY_RANGE)
     setFStock(EMPTY_RANGE)
     setFReorder(EMPTY_RANGE)
+    setFImage('all')
   }
 
   function sortBy(key: SortKey) {
@@ -262,68 +379,6 @@ export default function BeadsTable({
   }
 
   /** 數值範圍輸入 */
-  function RangeInput({
-    value,
-    onChange,
-    placeholder,
-  }: {
-    value: Range
-    onChange: (r: Range) => void
-    placeholder: string
-  }) {
-    return (
-      <div className="flex items-center gap-1">
-        <input
-          value={value.min}
-          onChange={(e) => onChange({ ...value, min: e.target.value })}
-          placeholder={placeholder}
-          inputMode="decimal"
-          className="w-14 border-b border-hairline bg-transparent py-0.5 text-right text-[12px] tnum focus:border-accent focus:outline-none"
-        />
-        <span className="text-[11px] text-ink-soft">–</span>
-        <input
-          value={value.max}
-          onChange={(e) => onChange({ ...value, max: e.target.value })}
-          placeholder="不限"
-          inputMode="decimal"
-          className="w-14 border-b border-hairline bg-transparent py-0.5 text-right text-[12px] tnum focus:border-accent focus:outline-none"
-        />
-      </div>
-    )
-  }
-
-  /** 多選籤 */
-  function ChipGroup({
-    options,
-    selected,
-    onToggle,
-  }: {
-    options: string[]
-    selected: Set<string>
-    onToggle: (v: string) => void
-  }) {
-    return (
-      <div className="flex flex-wrap gap-1">
-        {options.map((o) => {
-          const on = selected.has(o)
-          return (
-            <button
-              key={o}
-              type="button"
-              onClick={() => onToggle(o)}
-              className={`border px-2 py-0.5 text-[12px] transition ${
-                on
-                  ? 'border-ink bg-ink text-paper'
-                  : 'border-hairline text-ink-soft hover:border-accent hover:text-ink'
-              }`}
-            >
-              {o}
-            </button>
-          )
-        })}
-      </div>
-    )
-  }
 
   return (
     <>
@@ -409,6 +464,30 @@ export default function BeadsTable({
             />
           </label>
 
+          <div className="text-[12px]">
+            <span className="block text-ink-soft">圖片</span>
+            <div className="mt-1.5 inline-flex border border-hairline">
+              {(
+                [
+                  ['all', '不限'],
+                  ['without', `沒有圖${noImageCount > 0 ? ` ${noImageCount}` : ''}`],
+                  ['with', '已有圖'],
+                ] as const
+              ).map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setFImage(key)}
+                  className={`px-2.5 py-1 text-[12px] ${
+                    fImage === key ? 'bg-ink text-paper' : 'text-ink-soft hover:text-ink'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+
           <div className="text-[12px] lg:col-span-2">
             <span className="block text-ink-soft">分類（可複選）</span>
             <div className="mt-1.5">
@@ -473,22 +552,35 @@ export default function BeadsTable({
           </button>
         </div>
       ) : (
-        <div className="max-h-[70vh] overflow-auto">
+        <div ref={scrollRef} className="max-h-[70vh] overflow-auto">
           {/*
             table-fixed 才吃得到 colgroup 的寬度；
             且必須明確給總寬，否則瀏覽器會把欄位壓縮到容器內，拖曳就看不出效果。
+
+            寬度取「欄寬總和」與「容器寬度」的大者：
+            欄寬總和較窄時撐滿容器（否則右側留一大片空白），
+            較寬時維持總和、由外層 overflow-auto 橫向捲動。
           */}
           <table
             className="border-collapse text-[13px]"
             style={{
               tableLayout: 'fixed',
-              width: visible.reduce((sum, c) => sum + (widths[c.key] ?? c.width), 0),
+              width: Math.max(colTotal, containerWidth || 0),
             }}
           >
+            {/*
+              撐滿容器時多出來的寬度全部給最後一欄，其餘維持拖曳設定的寬度。
+              若最後一欄也寫死寬度，table-fixed 會把多餘空間均分給每一欄，
+              拖曳調好的欄寬就會跑掉。
+            */}
             <colgroup>
-              {visible.map((c) => (
-                <col key={c.key} style={{ width: widths[c.key] }} />
-              ))}
+              {visible.map((c, i) => {
+                const isLast = i === visible.length - 1
+                const w = widths[c.key] ?? c.width
+                return (
+                  <col key={c.key} style={{ width: isLast ? w + slack : w }} />
+                )
+              })}
             </colgroup>
             <thead>
               <tr>
@@ -543,7 +635,15 @@ export default function BeadsTable({
                 const isLow = b.reorderPoint > 0 && b.stockQty <= b.reorderPoint
                 // 棄用的列淡化顯示，一眼看得出它不在選料清單裡
                 return (
-                  <tr key={b.id} className={`group/row ${b.isArchived ? 'opacity-45' : ''}`}>
+                  <tr
+                    key={b.id}
+                    onMouseEnter={(e) => setPreview({ bead: b, x: e.clientX, y: e.clientY })}
+                    onMouseMove={(e) =>
+                      setPreview((p) => (p?.bead.id === b.id ? { ...p, x: e.clientX, y: e.clientY } : p))
+                    }
+                    onMouseLeave={() => setPreview(null)}
+                    className={`group/row ${b.isArchived ? 'opacity-45' : ''}`}
+                  >
                     {visible.map((c) => {
                       const cls = `relative border-b border-hairline py-2.5 pr-3 align-middle ${
                         c.align === 'right' ? 'text-right tnum' : 'text-left'
@@ -795,6 +895,52 @@ export default function BeadsTable({
             </select>
             筆
           </label>
+        </div>
+      )}
+
+      {/*
+        滑過資料列時跟著滑鼠的放大預覽。
+        用 position:fixed 直接吃視窗座標——表格外層是 overflow-auto，
+        absolute 定位會被裁掉。
+        pointer-events-none 讓浮層不擋住底下的列，否則滑鼠一碰到浮層
+        就會觸發 mouseleave，變成閃爍。
+        靠近視窗右側／底部時往反方向翻，避免被切掉。
+      */}
+      {preview && (
+        <div
+          style={{
+            left: preview.x + 16,
+            top: preview.y + 16,
+            transform: `translate(${preview.x > window.innerWidth - 320 ? '-100%' : '0'}, ${
+              preview.y > window.innerHeight - 320 ? '-100%' : '0'
+            })`,
+          }}
+          className="pointer-events-none fixed z-50 w-[280px] border border-hairline bg-paper p-3 shadow-lg"
+        >
+          {preview.bead.imageUrl ? (
+            /* eslint-disable-next-line @next/next/no-img-element */
+            <img
+              src={preview.bead.imageUrl}
+              alt={preview.bead.name}
+              className="h-[240px] w-full border border-hairline bg-sunk object-contain"
+            />
+          ) : (
+            <div className="flex h-[240px] w-full items-center justify-center border border-dashed border-hairline text-[12px] text-ink-soft">
+              這顆還沒有圖片
+            </div>
+          )}
+          <p className="mt-2 font-serif text-[15px] tracking-wider text-ink">{preview.bead.name}</p>
+          <p className="mt-0.5 break-words text-[12px] leading-relaxed text-ink-soft">
+            {preview.bead.sourceTitle ?? '—'}
+          </p>
+          <p className="break-words text-[12px] leading-relaxed text-ink-soft">
+            {preview.bead.sourceSpec ?? '—'}
+          </p>
+          <p className="mt-1 text-[12px] text-ink-soft">
+            {preview.bead.category ?? '未分類'}
+            {preview.bead.sizeMm ? ` · ${preview.bead.sizeMm}mm` : ''}
+            {` · 庫存 ${preview.bead.stockQty}`}
+          </p>
         </div>
       )}
     </>

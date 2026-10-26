@@ -15,7 +15,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   return (
     <div className="min-h-screen">
       <header className="border-b border-hairline">
-        <div className="mx-auto max-w-[1280px] px-6 py-4 flex items-baseline gap-8">
+        <div className="mx-auto w-full px-6 py-4 flex items-baseline gap-8">
           <Link href="/admin" className="font-serif text-lg tracking-[0.18em] text-ink">
             平凡生活
           </Link>
@@ -24,7 +24,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
       </header>
 
       <nav className="border-b border-hairline bg-sunk/40">
-        <div className="mx-auto max-w-[1280px] px-6">
+        <div className="mx-auto w-full px-6">
           <ul className="flex flex-wrap gap-x-7 gap-y-1">
             {NAV.map((item) => (
               <li key={item.href}>
@@ -41,7 +41,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         </div>
       </nav>
 
-      <main className="mx-auto max-w-[1280px] px-6 py-10">{children}</main>
+      <main className="mx-auto w-full px-6 py-10">{children}</main>
     </div>
   )
 }
