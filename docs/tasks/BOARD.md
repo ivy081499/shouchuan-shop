@@ -119,6 +119,25 @@
 
 ## 🔧 SCHEMA 變更請求
 
+- [x] **採購需求與低庫存要標示「已下單未到貨」** — 凍結檔例外變更
+  店主 2026-10-26 核准（「C 接著處理」）。稽核漏洞 C：
+  改成「貨到才入庫」之後，在路上的貨庫存是 0，
+  採購需求會叫店主把已經下單的東西再買一次。
+
+  **未改 `db/schema.ts`、未產生 migration、未裝套件。**
+  改的是 `src/contracts/report.ts`（加顯示用欄位）與
+  `src/data/reports.ts`（計算在途數量）。
+
+  在途數量**不計入庫存**——計入的話缺料警示會消失。
+  只在畫面上標示出來，讓店主自己判斷要不要補單。
+
+
+- [x] **導覽列新增「進貨批次」** — 凍結檔 `_shell/nav.ts` 例外變更
+  店主 2026-10-26 當面要求「進貨批次獨立成一個頁面」。
+  **未改 schema、未改 contracts、未產生 migration**，只在 NAV 陣列加一項。
+  收貨確認從 `/admin/inventory` 搬到 `/admin/shipments`。
+
+
 > 需要改 `db/schema.ts` 或 `src/contracts/**` 的，寫在這裡，不要自己改。
 
 - [x] **新增 `shipments` 表 + `purchases.shipment_id`** — 關稅需求

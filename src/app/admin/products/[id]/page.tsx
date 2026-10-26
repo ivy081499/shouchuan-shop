@@ -59,7 +59,12 @@ export default async function ProductDetailPage({
         sortOrder={product.sortOrder}
         priceCents={product.priceCents}
         status={product.status}
-        images={images.map((img) => ({ id: img.id, url: toUrl(img.r2Key), sortOrder: img.sortOrder }))}
+        images={images.map((img) => ({
+          id: img.id,
+          url: toUrl(img.r2Key),
+          sortOrder: img.sortOrder,
+          audience: img.audience,
+        }))}
         beads={beads.map((b) => ({
           id: b.id,
           name: b.name,

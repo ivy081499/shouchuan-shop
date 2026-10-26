@@ -24,6 +24,11 @@ export const beadInputSchema = z.object({
     .regex(/^#[0-9a-fA-F]{6}$/, '顏色請用 #RRGGBB 格式')
     .nullable()
     .optional(),
+  /** 顏色分類（彩虹七色＋無彩色），供「我要紅色的料」這種篩選 */
+  colorFamily: z
+    .enum(['red', 'orange', 'yellow', 'green', 'blue', 'indigo', 'violet', 'neutral'])
+    .nullable()
+    .optional(),
   supplierId: idSchema.nullable().optional(),
   sourceUrl: z.string().url('請填寫正確的網址').nullable().optional(),
   sourceTitle: z.string().trim().max(300).nullable().optional(),
@@ -103,3 +108,17 @@ export const confirmImportSchema = z
     { message: '每一列都要指定對應的珠子，或填寫新珠子的名稱' },
   )
 export type ConfirmImportInput = z.infer<typeof confirmImportSchema>
+
+/** 顏色分類的中文標籤。彩虹七色＋無彩色（白灰黑金銀透明都歸這類） */
+export const COLOR_FAMILY_LABEL = {
+  red: '紅',
+  orange: '橙',
+  yellow: '黃',
+  green: '綠',
+  blue: '藍',
+  indigo: '靛',
+  violet: '紫',
+  neutral: '無彩色',
+} as const
+
+export type ColorFamily = keyof typeof COLOR_FAMILY_LABEL

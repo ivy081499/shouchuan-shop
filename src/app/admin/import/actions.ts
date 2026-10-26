@@ -1,11 +1,11 @@
 'use server'
 
 import { getDb } from '@/data/db'
-import { upsertSupplierByName, findBeadBySource, createBead, adjustStock } from '@/data/beads'
-import { calcPurchaseCosts, calcMovingAverageCost } from '@/lib/costing'
+import { upsertSupplierByName, findBeadBySource, createBead } from '@/data/beads'
+import { calcPurchaseCosts } from '@/lib/costing'
 import { parseTaobaoXlsx, type ParsedPurchaseRow } from '@/lib/xlsx-import'
 import { inferCategory } from '@/lib/bead-spec'
-import { purchases, purchaseItems, beads, shipments } from '@db/schema'
+import { purchases, purchaseItems, shipments } from '@db/schema'
 import { eq } from 'drizzle-orm'
 import { revalidatePath } from 'next/cache'
 
@@ -144,22 +144,15 @@ export async function confirmImport(
         createdBeads++
       } else {
         /*
-         * 既有珠子：成本取移動加權平均，不直接覆蓋成最新價。
-         * 覆蓋會讓庫存值偏離實際花費（舊批便宜、新批貴時尤其明顯）。
+         * 【不在這裡動成本】既有珠子的平均成本等收貨時才重算。
          *
-         * bead.stockQty 是這次進貨【之前】的庫存——下方 adjustStock 才會加上新的量，
-         * 順序不可對調，否則分母會把新進的顆數算兩次。
+         * 2026-10-26 稽核漏洞 A：成本若在匯入當下就混入新批，
+         * 但庫存要等收貨才加，兩者脫鉤會讓庫存價值虛增——
+         * 手邊還是舊貨 120 顆，單價卻已經被新批拉高。
+         *
+         * 本列自己的單顆成本（computedUnitCostCents，下方寫入 purchase_items）
+         * 是這批的固定值、不隨庫存變動，收貨時拿它重算平均即可。
          */
-        const avgCost = calcMovingAverageCost(
-          bead.stockQty,
-          bead.unitCostCents,
-          cost.totalBeads,
-          cost.lineTotalCents,
-        )
-        await db
-          .update(beads)
-          .set({ unitCostCents: avgCost, updatedAt: Math.floor(Date.now() / 1000) })
-          .where(eq(beads.id, bead.id))
         updatedBeads++
       }
 
@@ -177,8 +170,11 @@ export async function confirmImport(
         computedUnitCostCents: cost.unitCostCents,
       })
 
-      // 進貨入庫，並寫庫存流水帳
-      await adjustStock(db, bead.id, cost.totalBeads, 'purchase', purchaseId, `進貨 ${orderNo}`)
+      /*
+       * 【不在這裡入庫】貨還沒到手，不能算進庫存。
+       * 入庫與庫存流水帳一律由「收貨確認」寫入（見 inventory/actions.ts）。
+       * totalQty 這裡只是回報給店主「這批叫了幾顆」，不代表已入庫。
+       */
       totalQty += cost.totalBeads
     }
   }

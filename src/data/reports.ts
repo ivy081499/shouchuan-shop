@@ -9,11 +9,16 @@
  * （見 BOARD「SCHEMA 變更請求」）。棄用只代表不再拿來做手串，
  * 料還在手上、錢已經花了，庫存價值必須照列。
  * 採購需求維持排除棄用料——都棄用了不該再叫貨。
+ *
+ * 例外紀錄：2026-10-26 經店主核准（稽核漏洞 C），採購需求與庫存概況
+ * 加上「已下單未到貨」數量。改成「貨到才入庫」之後，在路上的貨庫存是 0，
+ * 不標示的話報表會叫店主把已經下單的東西再買一次。
+ * 在途數量【不計入庫存、不折抵缺口】，只做提醒。
  */
 
 import { eq, and, inArray, asc, desc, gte, lte, sql } from 'drizzle-orm'
 import type { Db } from './db.ts'
-import { beads, suppliers, orders, orderItems, products, recipes } from '@db/schema'
+import { beads, suppliers, orders, orderItems, products, recipes, purchaseItems, purchases } from '@db/schema'
 import { calcShortages, calcMargin, calcBuildableQty } from '@/lib/costing'
 import type {
   PurchasingReport,
@@ -26,6 +31,34 @@ import type {
   BuildableLine,
 } from '@/contracts/report'
 import { listOpenOrders, expandOrderToBeadDemand } from './orders.ts'
+
+/**
+ * 每顆珠「已下單但還沒收到貨」的顆數。
+ *
+ * 來源是已確認進貨單裡還沒打勾收貨的品項。
+ * 2026-10-26 起庫存要收貨才加，所以這些顆數不在 stockQty 裡，
+ * 報表要另外標示，否則店主會重複下單。
+ */
+async function getInTransitQty(db: Db): Promise<Map<number, number>> {
+  const rows = await db
+    .select({
+      beadId: purchaseItems.beadId,
+      quantity: purchaseItems.quantity,
+      beadsPerUnit: purchaseItems.beadsPerUnit,
+    })
+    .from(purchaseItems)
+    .innerJoin(purchases, eq(purchases.id, purchaseItems.purchaseId))
+    .where(and(sql`${purchaseItems.receivedAt} IS NULL`, eq(purchases.status, 'confirmed')))
+
+  const map = new Map<number, number>()
+  for (const r of rows) {
+    if (r.beadId === null) continue
+    const qty = r.quantity * (r.beadsPerUnit ?? 0)
+    if (qty <= 0) continue
+    map.set(r.beadId, (map.get(r.beadId) ?? 0) + qty)
+  }
+  return map
+}
 
 /* ────────────────────────────────────────────────────────────
    採購需求表（店主最重要的報表）
@@ -66,7 +99,8 @@ export async function getPurchasingReport(db: Db, includeUnpaid = false): Promis
     .leftJoin(suppliers, eq(beads.supplierId, suppliers.id))
     .where(eq(beads.isArchived, false))
 
-  // 4. 算缺口
+  // 4. 算缺口（在途數量不折抵缺口，只在畫面上標示）
+  const inTransit = await getInTransitQty(db)
   const shortages = calcShortages(
     beadRows.map((b) => ({
       beadId: b.id,
@@ -91,6 +125,7 @@ export async function getPurchasingReport(db: Db, includeUnpaid = false): Promis
       requiredQty: s.requiredQty,
       stockQty: s.stockQty,
       reorderPoint: s.reorderPoint,
+      inTransitQty: inTransit.get(bead.id) ?? 0,
       shortageQty: s.shortageQty,
       unitCostCents: bead.unitCostCents,
       estimatedCostCents: s.shortageQty * bead.unitCostCents,
@@ -233,8 +268,11 @@ export async function getInventoryReport(db: Db): Promise<InventoryReport> {
     // 棄用的珠子也要算——料還在手上、錢已經花了，庫存價值不能憑空消失
     .orderBy(asc(beads.name))
 
+  const inTransit = await getInTransitQty(db)
+
   const lines: InventoryLine[] = rows.map(({ isArchived, ...r }) => ({
     ...r,
+    inTransitQty: inTransit.get(r.beadId) ?? 0,
     stockValueCents: r.stockQty * r.unitCostCents,
     // 棄用的不再補貨，就不該觸發補貨提醒
     isLow: !isArchived && r.reorderPoint > 0 && r.stockQty <= r.reorderPoint,

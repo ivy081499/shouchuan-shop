@@ -3,7 +3,7 @@
  * ⚠️ 凍結檔案，不可修改。
  */
 
-import { eq, and, inArray, asc, sql } from 'drizzle-orm'
+import { eq, and, inArray, asc, desc, sql, isNull, isNotNull } from 'drizzle-orm'
 import type { Db } from './db.ts'
 import { products, productImages, recipes, beads, orderItems } from '@db/schema'
 import type { ProductInput, RecipeLineInput, ProductDetailView, ProductListItem, RecipeBeadView, ProductStatusValue } from '@/contracts/product'
@@ -14,12 +14,20 @@ import { calcProductCost, calcBuildableQty } from '@/lib/costing'
    ──────────────────────────────────────────────────────────── */
 
 export async function getProductById(db: Db, id: number) {
-  const rows = await db.select().from(products).where(eq(products.id, id)).limit(1)
+  const rows = await db
+    .select()
+    .from(products)
+    .where(and(eq(products.id, id), isNull(products.deletedAt)))
+    .limit(1)
   return rows[0] ?? null
 }
 
 export async function getProductBySlug(db: Db, slug: string) {
-  const rows = await db.select().from(products).where(eq(products.slug, slug)).limit(1)
+  const rows = await db
+    .select()
+    .from(products)
+    .where(and(eq(products.slug, slug), isNull(products.deletedAt)))
+    .limit(1)
   return rows[0] ?? null
 }
 
@@ -41,7 +49,7 @@ export async function getRecipe(db: Db, productId: number): Promise<RecipeBeadVi
     })
     .from(recipes)
     .innerJoin(beads, eq(recipes.beadId, beads.id))
-    .where(eq(recipes.productId, productId))
+    .where(and(eq(recipes.productId, productId), isNull(recipes.deletedAt)))
     .orderBy(asc(recipes.position))
 }
 
@@ -61,7 +69,7 @@ export async function getRecipeWithCost(db: Db, productId: number) {
     })
     .from(recipes)
     .innerJoin(beads, eq(recipes.beadId, beads.id))
-    .where(eq(recipes.productId, productId))
+    .where(and(eq(recipes.productId, productId), isNull(recipes.deletedAt)))
     .orderBy(asc(recipes.position))
 
   return {
@@ -84,7 +92,7 @@ export async function getAvailableQty(db: Db, productId: number): Promise<number
     .select({ qty: recipes.qty, stockQty: beads.stockQty })
     .from(recipes)
     .innerJoin(beads, eq(recipes.beadId, beads.id))
-    .where(eq(recipes.productId, productId))
+    .where(and(eq(recipes.productId, productId), isNull(recipes.deletedAt)))
 
   return calcBuildableQty(rows)
 }
@@ -103,7 +111,7 @@ export async function getAvailableQtyMap(db: Db, productIds: number[]): Promise<
     .select({ productId: recipes.productId, qty: recipes.qty, stockQty: beads.stockQty })
     .from(recipes)
     .innerJoin(beads, eq(recipes.beadId, beads.id))
-    .where(inArray(recipes.productId, productIds))
+    .where(and(inArray(recipes.productId, productIds), isNull(recipes.deletedAt)))
 
   for (const p of productRows) {
     if (p.manualStock !== null) {
@@ -136,7 +144,14 @@ export async function listStoreProducts(db: Db): Promise<ProductListItem[]> {
   const images = await db
     .select({ productId: productImages.productId, r2Key: productImages.r2Key, sortOrder: productImages.sortOrder })
     .from(productImages)
-    .where(inArray(productImages.productId, ids))
+    // 前台只顯示給客人看的圖
+    .where(
+      and(
+        inArray(productImages.productId, ids),
+        eq(productImages.audience, 'customer'),
+        isNull(productImages.deletedAt),
+      ),
+    )
     .orderBy(asc(productImages.sortOrder))
 
   const availability = await getAvailableQtyMap(db, ids)
@@ -151,7 +166,11 @@ export async function listStoreProducts(db: Db): Promise<ProductListItem[]> {
 
 /** 後台商品列表（含草稿與下架） */
 export async function listAdminProducts(db: Db) {
-  const rows = await db.select().from(products).orderBy(asc(products.sortOrder), asc(products.id))
+  const rows = await db
+    .select()
+    .from(products)
+    .where(isNull(products.deletedAt))
+    .orderBy(asc(products.sortOrder), asc(products.id))
   if (rows.length === 0) return []
 
   const ids = rows.map((r) => r.id)
@@ -162,7 +181,7 @@ export async function listAdminProducts(db: Db) {
     .select({ productId: recipes.productId, qty: recipes.qty, unitCostCents: beads.unitCostCents })
     .from(recipes)
     .innerJoin(beads, eq(recipes.beadId, beads.id))
-    .where(inArray(recipes.productId, ids))
+    .where(and(inArray(recipes.productId, ids), isNull(recipes.deletedAt)))
 
   return rows.map((p) => {
     const lines = recipeRows.filter((r) => r.productId === p.id)
@@ -183,7 +202,14 @@ export async function getProductDetail(db: Db, slug: string): Promise<ProductDet
     db
       .select({ r2Key: productImages.r2Key, alt: productImages.alt })
       .from(productImages)
-      .where(eq(productImages.productId, product.id))
+      // 前台只顯示給客人看的圖；internal 是店主的工作照
+      .where(
+        and(
+          eq(productImages.productId, product.id),
+          eq(productImages.audience, 'customer'),
+          isNull(productImages.deletedAt),
+        ),
+      )
       .orderBy(asc(productImages.sortOrder)),
     getRecipe(db, product.id),
     getAvailableQty(db, product.id),
@@ -227,19 +253,40 @@ export async function updateProduct(db: Db, id: number, input: Partial<ProductIn
  * 配方編輯器是整份儲存，不做逐列增刪，邏輯較單純。
  */
 export async function saveRecipe(db: Db, productId: number, lines: RecipeLineInput[]) {
-  await db.delete(recipes).where(eq(recipes.productId, productId))
+  const now = Math.floor(Date.now() / 1000)
+  // 軟刪除：舊配方標記為已刪除而非真的刪掉，之後可查可復原
+  await db
+    .update(recipes)
+    .set({ deletedAt: now, updatedAt: now })
+    .where(and(eq(recipes.productId, productId), isNull(recipes.deletedAt)))
   if (lines.length > 0) {
     await db.insert(recipes).values(lines.map((l) => ({ ...l, productId })))
   }
 }
 
-export async function addProductImage(db: Db, productId: number, r2Key: string, alt?: string, sortOrder = 0) {
-  const rows = await db.insert(productImages).values({ productId, r2Key, alt: alt ?? null, sortOrder }).returning()
+export async function addProductImage(
+  db: Db,
+  productId: number,
+  r2Key: string,
+  alt?: string,
+  sortOrder = 0,
+  /** customer＝上架給客人看；internal＝店主自己的工作照 */
+  audience: 'customer' | 'internal' = 'customer',
+) {
+  const rows = await db
+    .insert(productImages)
+    .values({ productId, r2Key, alt: alt ?? null, sortOrder, audience })
+    .returning()
   return rows[0]
 }
 
+/** 軟刪除商品圖。R2 上的檔案不動，之後可復原。 */
 export async function deleteProductImage(db: Db, imageId: number) {
-  await db.delete(productImages).where(eq(productImages.id, imageId))
+  const now = Math.floor(Date.now() / 1000)
+  await db
+    .update(productImages)
+    .set({ deletedAt: now, updatedAt: now })
+    .where(eq(productImages.id, imageId))
 }
 
 /* ────────────────────────────────────────────────────────────
@@ -275,5 +322,64 @@ export async function countOrderItems(db: Db, productId: number): Promise<number
  * 這是刻意的——誤刪時檔案還在，且孤兒檔案不影響任何功能。
  */
 export async function deleteProduct(db: Db, productId: number) {
-  await db.delete(products).where(eq(products.id, productId))
+  const now = Math.floor(Date.now() / 1000)
+  // 軟刪除：配方與照片一起標記，復原時才能整組回來
+  await db
+    .update(products)
+    .set({ deletedAt: now, updatedAt: now })
+    .where(eq(products.id, productId))
+  await db
+    .update(recipes)
+    .set({ deletedAt: now, updatedAt: now })
+    .where(and(eq(recipes.productId, productId), isNull(recipes.deletedAt)))
+  await db
+    .update(productImages)
+    .set({ deletedAt: now, updatedAt: now })
+    .where(and(eq(productImages.productId, productId), isNull(productImages.deletedAt)))
+}
+
+/** 列出已刪除的手串，供「已刪除」清單查詢與復原 */
+export async function listDeletedProducts(db: Db) {
+  return db
+    .select({
+      id: products.id,
+      name: products.name,
+      slug: products.slug,
+      priceCents: products.priceCents,
+      deletedAt: products.deletedAt,
+    })
+    .from(products)
+    .where(isNotNull(products.deletedAt))
+    .orderBy(desc(products.deletedAt))
+}
+
+/**
+ * 復原已刪除的手串，連同它的配方與照片。
+ *
+ * 只復原「和商品同時被刪」的配方與照片——比對 deletedAt 是否相同，
+ * 否則會把更早之前單獨刪掉的舊配方一起撈回來。
+ */
+export async function restoreProduct(db: Db, productId: number) {
+  const rows = await db
+    .select({ deletedAt: products.deletedAt })
+    .from(products)
+    .where(eq(products.id, productId))
+    .limit(1)
+  const deletedAt = rows[0]?.deletedAt
+  if (!deletedAt) return { ok: false as const, error: '這條手串沒有被刪除，不需要復原。' }
+
+  const now = Math.floor(Date.now() / 1000)
+  await db
+    .update(products)
+    .set({ deletedAt: null, updatedAt: now })
+    .where(eq(products.id, productId))
+  await db
+    .update(recipes)
+    .set({ deletedAt: null, updatedAt: now })
+    .where(and(eq(recipes.productId, productId), eq(recipes.deletedAt, deletedAt)))
+  await db
+    .update(productImages)
+    .set({ deletedAt: null, updatedAt: now })
+    .where(and(eq(productImages.productId, productId), eq(productImages.deletedAt, deletedAt)))
+  return { ok: true as const }
 }

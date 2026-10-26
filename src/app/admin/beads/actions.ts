@@ -84,6 +84,7 @@ const editableSchema = beadInputSchema.pick({
   category: true,
   sizeMm: true,
   reorderPoint: true,
+  colorFamily: true,
 }).partial()
 
 export type BeadPatch = {
@@ -92,6 +93,8 @@ export type BeadPatch = {
   category?: string | null
   sizeMm?: number | null
   reorderPoint?: number
+  /** null = 未設定顏色 */
+  colorFamily?: 'red' | 'orange' | 'yellow' | 'green' | 'blue' | 'indigo' | 'violet' | 'neutral' | null
 }
 
 /** 更新珠子的可編輯欄位 */
