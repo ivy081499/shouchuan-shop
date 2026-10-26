@@ -84,6 +84,16 @@ export default async function AdminHome() {
                   : `${beads.length} 種，庫存充足`}
               </p>
             </Link>
+
+            <Link
+              href="/admin/reports/purchase-list"
+              className="border border-hairline p-5 hover:border-accent"
+            >
+              <div className="font-serif text-base tracking-wider text-ink">採購清單</div>
+              <p className="mt-1.5 text-[13px] text-ink-soft">
+                自己挑要補哪些珠子，存起來照著一家一家下單
+              </p>
+            </Link>
           </div>
         </>
       )}

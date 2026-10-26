@@ -175,9 +175,9 @@
 
   **只有前台階段 D 需要**。階段 A／B／C 都不依賴它，可以先做完再回來處理。
 
-- [ ] **新增 `purchase_lists` + `purchase_list_items` 表** — 店主主動挑貨的採購清單
-  **店主 2026-10-26 指示「要能存檔，我開 schema session」**，規格已寫好，待建表。
-  完整規格見 `docs/14-採購清單功能.md`。
+- [x] **新增 `purchase_lists` + `purchase_list_items` 表** — 店主主動挑貨的採購清單
+  **店主 2026-10-26 指示直接做完，已執行。** migration `0005_light_titania.sql`。
+  完整規格與實作落差見 `docs/14-採購清單功能.md`。
 
   ```
   purchase_lists
@@ -202,8 +202,9 @@
   （店主明確要求存檔）。`beads` 表無可用欄位，且 CLAUDE.md 禁止
   把資料塞進 note 欄位繞道。
 
-  ⚠️ 這是**真正的 schema 變更，會產生 migration**。
-  必須另開 schema session，確認沒有其他工作流同時進行。
+  **執行紀錄**：migration 0005 只有 CREATE TABLE，未 ALTER 或 DROP 任何既有表。
+  套用前已備份 `.data/local.sqlite`，套用後驗證 72 種珠子資料完好。
+  合併前先把 `receive-then-stock`（含 0003、0004）併入，避免 migration 撞號。
 
   **不影響既有功能**：`src/data/reports.ts`（凍結檔）不修改，
   新功能走新檔 `src/data/purchase-lists.ts`，

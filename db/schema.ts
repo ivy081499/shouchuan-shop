@@ -495,6 +495,81 @@ export const settings = sqliteTable('settings', {
   updatedAt: integer('updated_at').notNull().default(sql`(unixepoch())`),
 })
 
+/* ────────────────────────────────────────────────────────────
+   12. purchase_lists — 採購清單（店主主動挑貨）
+
+   與「採購需求表」互補：需求表由訂單驅動，零客戶時永遠空白；
+   這裡是店主自己決定要補什麼、補多少，且需跨 session 留存。
+   ──────────────────────────────────────────────────────────── */
+export const purchaseLists = sqliteTable(
+  'purchase_lists',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+
+    /** 清單名稱，例：2026-11 擺攤補貨 */
+    name: text('name').notNull(),
+    /** 備註 */
+    note: text('note'),
+
+    /**
+     * draft   = 編輯中，還在挑
+     * ordered = 已照著下單，等貨到
+     * closed  = 結案（貨到並已匯入，或放棄）
+     */
+    status: text('status', { enum: ['draft', 'ordered', 'closed'] })
+      .notNull()
+      .default('draft'),
+
+    ...timestamps,
+  },
+  (t) => [index('purchase_lists_status_idx').on(t.status)],
+)
+
+/* ────────────────────────────────────────────────────────────
+   13. purchase_list_items — 採購清單明細
+
+   【不存金額】單價一律即時從 beads.unit_cost_cents 讀取。
+   這份清單是「還沒買」的東西，價格以下單當時為準，不做快照
+   （訂單才需要快照，因為要凍結已成交的成本）。
+   ──────────────────────────────────────────────────────────── */
+export const purchaseListItems = sqliteTable(
+  'purchase_list_items',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+
+    listId: integer('list_id')
+      .notNull()
+      .references(() => purchaseLists.id, { onDelete: 'cascade' }),
+
+    beadId: integer('bead_id')
+      .notNull()
+      .references(() => beads.id, { onDelete: 'cascade' }),
+
+    /** 要叫的顆數。0 視為未選，API 收到 0 直接刪列 */
+    qty: integer('qty').notNull().default(0),
+
+    /**
+     * manual   = 店主自己勾的
+     * shortage = 用「一鍵帶入缺貨」加進來的
+     * 用於介面標示來源，讓店主分得出哪幾列是系統建議的
+     */
+    source: text('source', { enum: ['manual', 'shortage'] })
+      .notNull()
+      .default('manual'),
+
+    /** 備註，例：這次改買 8mm */
+    note: text('note'),
+
+    ...timestamps,
+  },
+  (t) => [
+    index('purchase_list_items_list_idx').on(t.listId),
+    index('purchase_list_items_bead_idx').on(t.beadId),
+    // 同一清單同一顆珠只能一列，一鍵帶入用 upsert 避免重複
+    uniqueIndex('purchase_list_items_uq').on(t.listId, t.beadId),
+  ],
+)
+
 /* ── 型別匯出（各工作流 import 這些，勿自行重新定義） ── */
 export type Supplier = typeof suppliers.$inferSelect
 export type NewSupplier = typeof suppliers.$inferInsert
@@ -517,5 +592,12 @@ export type NewOrderItem = typeof orderItems.$inferInsert
 export type StockLedgerEntry = typeof stockLedger.$inferSelect
 export type Setting = typeof settings.$inferSelect
 
+export type PurchaseList = typeof purchaseLists.$inferSelect
+export type NewPurchaseList = typeof purchaseLists.$inferInsert
+export type PurchaseListItem = typeof purchaseListItems.$inferSelect
+export type NewPurchaseListItem = typeof purchaseListItems.$inferInsert
+
 export type OrderStatus = Order['status']
 export type ProductStatus = Product['status']
+export type PurchaseListStatus = PurchaseList['status']
+export type PurchaseListItemSource = PurchaseListItem['source']
