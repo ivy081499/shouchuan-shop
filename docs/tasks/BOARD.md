@@ -119,6 +119,12 @@
 
 ## 🔧 SCHEMA 變更請求
 
+- [x] **導覽列新增「進貨批次」** — 凍結檔 `_shell/nav.ts` 例外變更
+  店主 2026-10-26 當面要求「進貨批次獨立成一個頁面」。
+  **未改 schema、未改 contracts、未產生 migration**，只在 NAV 陣列加一項。
+  收貨確認從 `/admin/inventory` 搬到 `/admin/shipments`。
+
+
 > 需要改 `db/schema.ts` 或 `src/contracts/**` 的，寫在這裡，不要自己改。
 
 - [x] **新增 `shipments` 表 + `purchases.shipment_id`** — 關稅需求

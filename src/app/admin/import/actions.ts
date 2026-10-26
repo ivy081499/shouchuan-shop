@@ -1,7 +1,7 @@
 'use server'
 
 import { getDb } from '@/data/db'
-import { upsertSupplierByName, findBeadBySource, createBead, adjustStock } from '@/data/beads'
+import { upsertSupplierByName, findBeadBySource, createBead } from '@/data/beads'
 import { calcPurchaseCosts, calcMovingAverageCost } from '@/lib/costing'
 import { parseTaobaoXlsx, type ParsedPurchaseRow } from '@/lib/xlsx-import'
 import { inferCategory } from '@/lib/bead-spec'
@@ -147,8 +147,9 @@ export async function confirmImport(
          * 既有珠子：成本取移動加權平均，不直接覆蓋成最新價。
          * 覆蓋會讓庫存值偏離實際花費（舊批便宜、新批貴時尤其明顯）。
          *
-         * bead.stockQty 是這次進貨【之前】的庫存——下方 adjustStock 才會加上新的量，
-         * 順序不可對調，否則分母會把新進的顆數算兩次。
+         * 成本在匯入當下就算（錢已經付給賣家了），但【庫存要等收到貨才加】
+         * ——店主 2026-10-26 決定的「甲案」。所以 bead.stockQty 此刻必然
+         * 還不含本批，直接拿來當分母即可。入庫改由收貨確認負責。
          */
         const avgCost = calcMovingAverageCost(
           bead.stockQty,
@@ -177,8 +178,11 @@ export async function confirmImport(
         computedUnitCostCents: cost.unitCostCents,
       })
 
-      // 進貨入庫，並寫庫存流水帳
-      await adjustStock(db, bead.id, cost.totalBeads, 'purchase', purchaseId, `進貨 ${orderNo}`)
+      /*
+       * 【不在這裡入庫】貨還沒到手，不能算進庫存。
+       * 入庫與庫存流水帳一律由「收貨確認」寫入（見 inventory/actions.ts）。
+       * totalQty 這裡只是回報給店主「這批叫了幾顆」，不代表已入庫。
+       */
       totalQty += cost.totalBeads
     }
   }

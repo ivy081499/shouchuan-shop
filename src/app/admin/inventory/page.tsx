@@ -1,5 +1,5 @@
 import { getDb } from '@/data/db'
-import { listBeads, listCategories, getPurchaseTotals, listShipments } from '@/data/beads'
+import { listBeads, listCategories, getPurchaseTotals } from '@/data/beads'
 import { settings } from '@db/schema'
 import { eq } from 'drizzle-orm'
 import { PageTitle, Money, Empty, Stat } from '@/ui'
@@ -7,19 +7,17 @@ import { formatCNY } from '@/lib/money'
 import BeadsTable from '../beads/BeadsTable.tsx'
 import ImportClient from '../import/ImportClient.tsx'
 import InventoryTabs from './InventoryTabs.tsx'
-import ShipmentList from './ShipmentList.tsx'
 
 export const dynamic = 'force-dynamic'
 
 export default async function InventoryPage() {
   const db = await getDb()
-  const [beads, categories, fxRows, totals, shipments] = await Promise.all([
+  const [beads, categories, fxRows, totals] = await Promise.all([
     // 連棄用的一起撈，由表格的「已棄用」篩選決定顯示哪些
     listBeads(db, { includeArchived: true }),
     listCategories(db),
     db.select().from(settings).where(eq(settings.key, 'default_fx_rate_x100')).limit(1),
     getPurchaseTotals(db),
-    listShipments(db),
   ])
   const fx = Number.parseInt(fxRows[0]?.value ?? '450', 10)
 
@@ -104,10 +102,6 @@ export default async function InventoryPage() {
           }
           explain="安全庫存是你自己設的補貨提醒線：設 10 就代表剩 10 顆以下要補貨。在下方清單的「安全庫存」欄點一下即可設定，留 0 表示不提醒。目前還沒設定任何門檻時，這個數字永遠是 0。"
         />
-      </div>
-
-      <div className="mb-8">
-        <ShipmentList shipments={shipments} />
       </div>
 
       <InventoryTabs list={list} importer={<ImportClient defaultFxRateX100={fx} />} />
