@@ -235,9 +235,20 @@ export const purchaseItems = sqliteTable(
      */
     dutyShareTwdCents: integer('duty_share_twd_cents').notNull().default(0),
 
+    /**
+     * 這一項實際收到貨的時間；null＝還沒收到。
+     * 店主逐項核對包裹內容後自己打勾——同一批貨常分批到、
+     * 或某幾項缺貨沒寄，整批一個勾看不出來少了什麼。
+     */
+    receivedAt: integer('received_at'),
+
     ...timestamps,
   },
-  (t) => [index('purchase_items_purchase_idx').on(t.purchaseId), index('purchase_items_bead_idx').on(t.beadId)],
+  (t) => [
+    index('purchase_items_purchase_idx').on(t.purchaseId),
+    index('purchase_items_bead_idx').on(t.beadId),
+    index('purchase_items_received_idx').on(t.receivedAt),
+  ],
 )
 
 /* ────────────────────────────────────────────────────────────

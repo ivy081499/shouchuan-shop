@@ -296,6 +296,9 @@ export interface ShipmentRow {
   orderCount: number
   beadCount: number
   totalQty: number
+  /** 這批有幾個品項、其中幾項已確認收到 */
+  itemCount: number
+  receivedCount: number
 }
 
 /** 列出所有進貨批次，新的在前 */
@@ -309,6 +312,8 @@ export async function listShipments(db: Db): Promise<ShipmentRow[]> {
       orderCount: sql<number>`COUNT(DISTINCT ${purchases.id})`,
       beadCount: sql<number>`COUNT(DISTINCT ${purchaseItems.beadId})`,
       totalQty: sql<number>`COALESCE(SUM(${purchaseItems.quantity} * ${purchaseItems.beadsPerUnit}), 0)`,
+      itemCount: sql<number>`COUNT(${purchaseItems.id})`,
+      receivedCount: sql<number>`COUNT(${purchaseItems.receivedAt})`,
     })
     .from(shipments)
     .leftJoin(purchases, eq(purchases.shipmentId, shipments.id))
@@ -321,17 +326,102 @@ export async function listShipments(db: Db): Promise<ShipmentRow[]> {
     orderCount: Number(r.orderCount ?? 0),
     beadCount: Number(r.beadCount ?? 0),
     totalQty: Number(r.totalQty ?? 0),
+    itemCount: Number(r.itemCount ?? 0),
+    receivedCount: Number(r.receivedCount ?? 0),
+  }))
+}
+
+/* ────────────────────────────────────────────────────────────
+   逐項收貨確認
+
+   店主拆包裹時一項一項核對，不是整批打一個勾——
+   同一批常分批到貨，或某幾項賣家缺貨沒寄，
+   整批一個勾看不出來到底少了什麼。
+   ──────────────────────────────────────────────────────────── */
+
+export interface ReceiptItemRow {
+  id: number
+  shipmentId: number | null
+  beadName: string | null
+  rawSpec: string | null
+  imageUrl: string | null
+  quantity: number
+  beadsPerUnit: number | null
+  totalQty: number
+  receivedAt: number | null
+}
+
+/** 某一批的所有品項，供逐項打勾 */
+export async function listReceiptItems(db: Db, shipmentId: number): Promise<ReceiptItemRow[]> {
+  const rows = await db
+    .select({
+      id: purchaseItems.id,
+      shipmentId: purchases.shipmentId,
+      beadName: beads.name,
+      rawSpec: purchaseItems.rawSpec,
+      imageUrl: beads.imageUrl,
+      quantity: purchaseItems.quantity,
+      beadsPerUnit: purchaseItems.beadsPerUnit,
+      receivedAt: purchaseItems.receivedAt,
+    })
+    .from(purchaseItems)
+    .innerJoin(purchases, eq(purchases.id, purchaseItems.purchaseId))
+    .leftJoin(beads, eq(beads.id, purchaseItems.beadId))
+    .where(eq(purchases.shipmentId, shipmentId))
+    .orderBy(asc(purchaseItems.id))
+
+  return rows.map((r) => ({
+    ...r,
+    totalQty: r.quantity * (r.beadsPerUnit ?? 0),
   }))
 }
 
 /**
- * 標記／取消「已收到貨」。
- * received 為 true 時寫入當下時間，false 清成 null。
+ * 標記／取消單一品項已收貨。
+ *
+ * 回傳 changed=false 代表狀態本來就是這樣（重複點了），
+ * 呼叫端可據此提示，而不是假裝剛剛做了什麼。
  */
-export async function setShipmentReceived(db: Db, shipmentId: number, received: boolean) {
+export async function setItemReceived(db: Db, itemId: number, received: boolean) {
+  const rows = await db
+    .select({ receivedAt: purchaseItems.receivedAt })
+    .from(purchaseItems)
+    .where(eq(purchaseItems.id, itemId))
+    .limit(1)
+  if (rows.length === 0) return { ok: false as const, error: '找不到這個品項。' }
+
+  const already = rows[0].receivedAt !== null
+  if (already === received) return { ok: true as const, changed: false }
+
   const now = Math.floor(Date.now() / 1000)
   await db
-    .update(shipments)
-    .set({ arrivedAt: received ? now : null, updatedAt: now })
-    .where(eq(shipments.id, shipmentId))
+    .update(purchaseItems)
+    .set({ receivedAt: received ? now : null, updatedAt: now })
+    .where(eq(purchaseItems.id, itemId))
+  return { ok: true as const, changed: true }
+}
+
+/**
+ * 整批確認／取消。
+ *
+ * 【防呆】只改「狀態不同」的那些——
+ * 已經打過勾的保留原本的收貨時間，不會被這次操作覆蓋成今天。
+ * 否則分批到貨時按一次「全部收到」，先前記錄的日期就全被洗掉。
+ */
+export async function setAllItemsReceived(db: Db, shipmentId: number, received: boolean) {
+  const items = await db
+    .select({ id: purchaseItems.id, receivedAt: purchaseItems.receivedAt })
+    .from(purchaseItems)
+    .innerJoin(purchases, eq(purchases.id, purchaseItems.purchaseId))
+    .where(eq(purchases.shipmentId, shipmentId))
+
+  const targets = items.filter((i) => (i.receivedAt !== null) !== received).map((i) => i.id)
+  if (targets.length === 0) return { ok: true as const, changed: 0 }
+
+  const now = Math.floor(Date.now() / 1000)
+  await db
+    .update(purchaseItems)
+    .set({ receivedAt: received ? now : null, updatedAt: now })
+    .where(inArray(purchaseItems.id, targets))
+  return { ok: true as const, changed: targets.length }
 }
