@@ -28,7 +28,7 @@ export default async function PurchasingPage({
 
   return (
     <>
-      <PageTitle note="依未出貨訂單展開配方，扣掉現有庫存，算出還要跟哪家店叫多少貨。">
+      <PageTitle note="依未出貨訂單展開配方，扣掉現有庫存，算出還要跟哪家店叫多少貨。「在路上」是已經下單還沒收到的，沒有算進庫存——看到有數字就先確認那批到了沒，不用急著再買。">
         採購需求
       </PageTitle>
 
@@ -82,6 +82,7 @@ export default async function PurchasingPage({
                     <Th align="right">尺寸</Th>
                     <Th align="right">訂單需求</Th>
                     <Th align="right">現有庫存</Th>
+                    <Th align="right">在路上</Th>
                     <Th align="right">要叫</Th>
                     <Th align="right">預估金額</Th>
                     <Th>淘寶規格</Th>
@@ -100,6 +101,15 @@ export default async function PurchasingPage({
                       </Td>
                       <Td align="right" numeric>
                         {l.stockQty}
+                      </Td>
+                      <Td align="right" numeric>
+                        {l.inTransitQty > 0 ? (
+                          <span className="text-accent" title="已經下單、還沒收到貨的數量。沒有算進庫存。">
+                            {l.inTransitQty}
+                          </span>
+                        ) : (
+                          <span className="text-ink-soft">—</span>
+                        )}
                       </Td>
                       <Td align="right" numeric alert>
                         {l.shortageQty}

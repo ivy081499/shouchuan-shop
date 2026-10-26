@@ -25,6 +25,8 @@ export default function ShipmentList({ shipments }: { shipments: ShipmentRow[] }
   const [error, setError] = useState<string | null>(null)
   const [note, setNote] = useState<string | null>(null)
   const [saving, startTransition] = useTransition()
+  /** 有未送出的勾選時，暫存使用者想切去哪一批，等他回答再動作 */
+  const [pendingSwitch, setPendingSwitch] = useState<number | null>(null)
   const router = useRouter()
 
   async function load(shipmentId: number) {
@@ -40,9 +42,24 @@ export default function ShipmentList({ shipments }: { shipments: ShipmentRow[] }
     setTicked(new Set(res.items.filter((i) => i.receivedAt !== null).map((i) => i.id)))
   }
 
+  /**
+   * 展開／收合另一批。
+   *
+   * 【2026-10-26 稽核漏洞 D】勾到一半切走，改動會無聲消失。
+   * 有未送出的勾選時先問一次，不要默默丟掉店主剛核對完的結果。
+   */
   function toggleOpen(shipmentId: number) {
+    if (dirty && !saving) {
+      setPendingSwitch(shipmentId)
+      return
+    }
+    doSwitch(shipmentId)
+  }
+
+  function doSwitch(shipmentId: number) {
     setNote(null)
     setError(null)
+    setPendingSwitch(null)
     if (openId === shipmentId) {
       setOpenId(null)
       setItems([])
@@ -93,6 +110,8 @@ export default function ShipmentList({ shipments }: { shipments: ShipmentRow[] }
       setNote(parts.length > 0 ? `已送出：${parts.join('；')}。` : '沒有變動。')
       await load(openId)
       router.refresh()
+      // 若剛才是為了切去別批而先送出，送完就接著切過去
+      if (pendingSwitch !== null) doSwitch(pendingSwitch)
     })
   }
 
@@ -123,6 +142,35 @@ export default function ShipmentList({ shipments }: { shipments: ShipmentRow[] }
         <p role="alert" className="border-b border-alert bg-alert/5 px-5 py-2 text-[12px] text-ink">
           {error}
         </p>
+      )}
+
+      {pendingSwitch !== null && (
+        <div className="flex flex-wrap items-center gap-3 border-b border-accent bg-accent/5 px-5 py-2.5 text-[12px]">
+          <span className="text-ink">
+            這批有 {willReceive.length + willUndo.length} 項勾選還沒送出，切走就會不見。
+          </span>
+          <button
+            type="button"
+            onClick={submit}
+            className="bg-ink px-3 py-1 text-paper hover:bg-accent"
+          >
+            先送出再切換
+          </button>
+          <button
+            type="button"
+            onClick={() => doSwitch(pendingSwitch)}
+            className="border border-hairline px-3 py-1 text-ink-soft hover:border-alert hover:text-alert"
+          >
+            丟掉這些勾選
+          </button>
+          <button
+            type="button"
+            onClick={() => setPendingSwitch(null)}
+            className="text-ink-soft underline underline-offset-2 hover:text-ink"
+          >
+            留在這批
+          </button>
+        </div>
       )}
 
       <ul className="divide-y divide-hairline">

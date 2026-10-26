@@ -2,7 +2,8 @@
 
 import { getDb } from '@/data/db'
 import { listReceiptItems, adjustStock, getBeadById } from '@/data/beads'
-import { purchaseItems, purchases } from '@db/schema'
+import { calcMovingAverageCost } from '@/lib/costing'
+import { purchaseItems, purchases, beads } from '@db/schema'
 import { eq, inArray } from 'drizzle-orm'
 import { revalidatePath } from 'next/cache'
 
@@ -30,6 +31,8 @@ async function loadReceiptRows(db: Awaited<ReturnType<typeof getDb>>, shipmentId
       quantity: purchaseItems.quantity,
       beadsPerUnit: purchaseItems.beadsPerUnit,
       receivedAt: purchaseItems.receivedAt,
+      /** 這一列的單顆成本，匯入時就算好且不再變動——收貨重算平均的依據 */
+      unitCostCents: purchaseItems.computedUnitCostCents,
     })
     .from(purchaseItems)
     .innerJoin(purchases, eq(purchases.id, purchaseItems.purchaseId))
@@ -39,6 +42,53 @@ async function loadReceiptRows(db: Awaited<ReturnType<typeof getDb>>, shipmentId
 /** 這一項收到時要加幾顆／取消時要扣幾顆 */
 function qtyOf(item: { quantity: number; beadsPerUnit: number | null }) {
   return item.quantity * (item.beadsPerUnit ?? 0)
+}
+
+/**
+ * 取消收貨後，這顆珠的平均成本該是多少。
+ *
+ * 【為什麼不從平均值反推】
+ * 平均成本是四捨五入過的整數（分），反推要再除一次，
+ * 會留下一分左右的殘差——帳目數字不該因為按錯又取消就悄悄變動。
+ *
+ * 改成用「還留在手上的批次」重新算一次：
+ * 拿這顆珠所有【已收貨】的進貨列（排除正要取消的那幾列），
+ * 用各列自己的單顆成本與顆數重算加權平均，結果與沒收過那批完全一致。
+ *
+ * 算不出來時（沒有任何已收貨紀錄，例如庫存全來自手動盤點）
+ * 回傳 null，交給呼叫端保留原成本不動——
+ * 寧可不動，也不要用猜的數字覆蓋店主的帳。
+ */
+async function costWithoutItems(
+  db: Awaited<ReturnType<typeof getDb>>,
+  beadId: number,
+  excludeItemIds: number[],
+): Promise<number | null> {
+  const rows = await db
+    .select({
+      id: purchaseItems.id,
+      quantity: purchaseItems.quantity,
+      beadsPerUnit: purchaseItems.beadsPerUnit,
+      unitCostCents: purchaseItems.computedUnitCostCents,
+      receivedAt: purchaseItems.receivedAt,
+    })
+    .from(purchaseItems)
+    .where(eq(purchaseItems.beadId, beadId))
+
+  // 只算「已經收到、而且這次不取消」的批次——沒到手的貨不該影響成本
+  const kept = rows.filter(
+    (r) =>
+      !excludeItemIds.includes(r.id) &&
+      r.receivedAt !== null &&
+      r.unitCostCents !== null &&
+      qtyOf(r) > 0,
+  )
+  if (kept.length === 0) return null
+
+  const totalQty = kept.reduce((sum, r) => sum + qtyOf(r), 0)
+  if (totalQty <= 0) return null
+  const totalValue = kept.reduce((sum, r) => sum + qtyOf(r) * (r.unitCostCents as number), 0)
+  return Math.round(totalValue / totalQty)
 }
 
 /**
@@ -81,12 +131,33 @@ export async function saveReceiptAction(shipmentId: number, receivedIds: number[
     }
 
     const now = Math.floor(Date.now() / 1000)
+    // 同一顆珠可能有好幾列同時取消，重算成本時要一次全部排除
+    const undoIds = toUndo.map((i) => i.id)
     let addedQty = 0
     let removedQty = 0
 
     for (const it of toReceive) {
       const qty = qtyOf(it)
       if (it.beadId !== null && qty > 0) {
+        /*
+         * 【順序重要】先算成本再入庫。
+         * 移動加權平均的分母是「這批進來之前」的庫存，
+         * 先入庫會讓本批顆數被算兩次。
+         */
+        const bead = await getBeadById(db, it.beadId)
+        if (bead && it.unitCostCents !== null) {
+          const avg = calcMovingAverageCost(
+            bead.stockQty,
+            bead.unitCostCents,
+            qty,
+            it.unitCostCents * qty,
+          )
+          await db
+            .update(beads)
+            .set({ unitCostCents: avg, updatedAt: now })
+            .where(eq(beads.id, it.beadId))
+        }
+
         const res = await adjustStock(db, it.beadId, qty, 'purchase', it.purchaseId, '收貨入庫')
         if (!res.ok) return { ok: false as const, error: res.error }
         addedQty += qty
@@ -100,6 +171,15 @@ export async function saveReceiptAction(shipmentId: number, receivedIds: number[
     for (const it of toUndo) {
       const qty = qtyOf(it)
       if (it.beadId !== null && qty > 0) {
+        /* 取消：用剩下還在手上的批次重算成本，算不出來就保留原值不動 */
+        const restored = await costWithoutItems(db, it.beadId, undoIds)
+        if (restored !== null) {
+          await db
+            .update(beads)
+            .set({ unitCostCents: restored, updatedAt: now })
+            .where(eq(beads.id, it.beadId))
+        }
+
         const res = await adjustStock(db, it.beadId, -qty, 'purchase', it.purchaseId, '取消收貨，退回庫存')
         if (!res.ok) return { ok: false as const, error: res.error }
         removedQty += qty

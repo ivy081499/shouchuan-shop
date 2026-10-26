@@ -39,6 +39,15 @@ export interface PurchasingLine {
   requiredQty: number
   stockQty: number
   reorderPoint: number
+  /**
+   * 已下單但還沒收到貨的顆數（2026-10-26 新增）。
+   *
+   * 【不計入 stockQty，也不扣減 shortageQty】
+   * 貨還沒到手就不算庫存；若拿它折抵缺口，缺料警示會提早消失，
+   * 店主會以為料夠了。這個數字只用來提醒「這些已經叫過了」，
+   * 要不要再補單由店主自己判斷。
+   */
+  inTransitQty: number
   /** 待採購 = 需求 + 安全庫存 − 現有庫存，最小為 0 */
   shortageQty: number
   unitCostCents: number
@@ -107,6 +116,8 @@ export interface InventoryLine {
   sizeMm: number | null
   stockQty: number
   reorderPoint: number
+  /** 已下單但還沒收到貨的顆數（2026-10-26 新增，不計入 stockQty） */
+  inTransitQty: number
   unitCostCents: number
   /** 這顆珠目前壓了多少錢的庫存 */
   stockValueCents: number

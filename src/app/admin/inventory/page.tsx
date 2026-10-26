@@ -1,5 +1,6 @@
 import { getDb } from '@/data/db'
 import { listBeads, listCategories, getPurchaseTotals } from '@/data/beads'
+import { getInventoryReport } from '@/data/reports'
 import { settings } from '@db/schema'
 import { eq } from 'drizzle-orm'
 import { PageTitle, Money, Empty, Stat } from '@/ui'
@@ -12,12 +13,13 @@ export const dynamic = 'force-dynamic'
 
 export default async function InventoryPage() {
   const db = await getDb()
-  const [beads, categories, fxRows, totals] = await Promise.all([
+  const [beads, categories, fxRows, totals, inventory] = await Promise.all([
     // 連棄用的一起撈，由表格的「已棄用」篩選決定顯示哪些
     listBeads(db, { includeArchived: true }),
     listCategories(db),
     db.select().from(settings).where(eq(settings.key, 'default_fx_rate_x100')).limit(1),
     getPurchaseTotals(db),
+    getInventoryReport(db),
   ])
   const fx = Number.parseInt(fxRows[0]?.value ?? '450', 10)
 
@@ -27,6 +29,14 @@ export default async function InventoryPage() {
   // 安全庫存為 0 代表不提醒，要排除
   const lowStock = active.filter((b) => b.reorderPoint > 0 && b.stockQty <= b.reorderPoint)
   const hasReorderPoint = active.some((b) => b.reorderPoint > 0)
+
+  /*
+   * 低庫存裡有幾種「其實已經叫貨了、只是還沒到」。
+   * 2026-10-26 起貨到才入庫，不標示的話會重複下單（稽核漏洞 C）。
+   */
+  const inTransitByBead = new Map(inventory.lines.map((l) => [l.beadId, l.inTransitQty]))
+  const lowButOrdered = lowStock.filter((b) => (inTransitByBead.get(b.id) ?? 0) > 0).length
+  const totalInTransit = inventory.lines.reduce((s, l) => s + l.inTransitQty, 0)
 
   const list =
     beads.length === 0 ? (
@@ -72,8 +82,13 @@ export default async function InventoryPage() {
         <Stat
           label="總顆數"
           value={totalQty}
+          sub={
+            totalInTransit > 0 ? (
+              <span className="text-accent">另有 {totalInTransit} 顆在路上</span>
+            ) : undefined
+          }
           hint="所有珠子加總"
-          explain="所有珠子現有庫存顆數相加。做手串會扣，進貨會加。"
+          explain="所有珠子現有庫存顆數相加。做手串會扣，收貨確認會加。已經下單但還沒收到的貨不算在裡面——要等你在「進貨批次」打勾確認收到才會加進來。"
         />
         <Stat
           label="進貨總額"
@@ -93,6 +108,11 @@ export default async function InventoryPage() {
           label="低於安全庫存"
           value={lowStock.length}
           alert={lowStock.length > 0}
+          sub={
+            lowButOrdered > 0 ? (
+              <span className="text-accent">其中 {lowButOrdered} 種已經叫貨了，還沒到</span>
+            ) : undefined
+          }
           hint={
             !hasReorderPoint
               ? '尚未設定任何門檻'
@@ -100,7 +120,7 @@ export default async function InventoryPage() {
                 ? '到採購需求看要叫多少'
                 : '目前充足'
           }
-          explain="安全庫存是你自己設的補貨提醒線：設 10 就代表剩 10 顆以下要補貨。在下方清單的「安全庫存」欄點一下即可設定，留 0 表示不提醒。目前還沒設定任何門檻時，這個數字永遠是 0。"
+          explain="安全庫存是你自己設的補貨提醒線：設 10 就代表剩 10 顆以下要補貨。在下方清單的「安全庫存」欄點一下即可設定，留 0 表示不提醒。目前還沒設定任何門檻時，這個數字永遠是 0。注意：已經下單但還沒收到的貨不算庫存，所以可能會看到「已經叫貨了」的提示——那表示不用再買一次。"
         />
       </div>
 

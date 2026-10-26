@@ -2,10 +2,10 @@
 
 import { getDb } from '@/data/db'
 import { upsertSupplierByName, findBeadBySource, createBead } from '@/data/beads'
-import { calcPurchaseCosts, calcMovingAverageCost } from '@/lib/costing'
+import { calcPurchaseCosts } from '@/lib/costing'
 import { parseTaobaoXlsx, type ParsedPurchaseRow } from '@/lib/xlsx-import'
 import { inferCategory } from '@/lib/bead-spec'
-import { purchases, purchaseItems, beads, shipments } from '@db/schema'
+import { purchases, purchaseItems, shipments } from '@db/schema'
 import { eq } from 'drizzle-orm'
 import { revalidatePath } from 'next/cache'
 
@@ -144,23 +144,15 @@ export async function confirmImport(
         createdBeads++
       } else {
         /*
-         * 既有珠子：成本取移動加權平均，不直接覆蓋成最新價。
-         * 覆蓋會讓庫存值偏離實際花費（舊批便宜、新批貴時尤其明顯）。
+         * 【不在這裡動成本】既有珠子的平均成本等收貨時才重算。
          *
-         * 成本在匯入當下就算（錢已經付給賣家了），但【庫存要等收到貨才加】
-         * ——店主 2026-10-26 決定的「甲案」。所以 bead.stockQty 此刻必然
-         * 還不含本批，直接拿來當分母即可。入庫改由收貨確認負責。
+         * 2026-10-26 稽核漏洞 A：成本若在匯入當下就混入新批，
+         * 但庫存要等收貨才加，兩者脫鉤會讓庫存價值虛增——
+         * 手邊還是舊貨 120 顆，單價卻已經被新批拉高。
+         *
+         * 本列自己的單顆成本（computedUnitCostCents，下方寫入 purchase_items）
+         * 是這批的固定值、不隨庫存變動，收貨時拿它重算平均即可。
          */
-        const avgCost = calcMovingAverageCost(
-          bead.stockQty,
-          bead.unitCostCents,
-          cost.totalBeads,
-          cost.lineTotalCents,
-        )
-        await db
-          .update(beads)
-          .set({ unitCostCents: avgCost, updatedAt: Math.floor(Date.now() / 1000) })
-          .where(eq(beads.id, bead.id))
         updatedBeads++
       }
 
